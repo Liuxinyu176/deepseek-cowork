@@ -22,8 +22,8 @@
 ## 📦 安装
 
 ### 选项 1: 运行可执行文件 (Windows)
-1.  进入 `dist` 目录。
-2.  运行 `DeepSeekAgent.exe` (单文件可执行程序)。
+1.  下载并解压 `dist/SmartFileAssistant.zip`。
+2.  运行 `SmartFileAssistant/SmartFileAssistant.exe`。
 3.  无需安装 Python。
 
 ### 选项 2: 源码运行

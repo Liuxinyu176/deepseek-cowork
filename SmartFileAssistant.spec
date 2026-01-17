@@ -25,6 +25,7 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+print(f"Python Env Tree size: {len(python_env)}")
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
@@ -48,7 +49,7 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,
-    a.datas,
+    a.datas + python_env,
     strip=False,
     upx=True,
     upx_exclude=[],

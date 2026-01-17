@@ -24,8 +24,8 @@ Unlike traditional chatbots, this assistant uses a **Chain-of-Thought (CoT)** ap
 ## 📦 Installation
 
 ### Option 1: Run from Executable (Windows)
-1.  Navigate to the `dist` directory.
-2.  Run `DeepSeekAgent.exe` (Single file executable).
+1.  Download and unzip `dist/SmartFileAssistant.zip`.
+2.  Run `SmartFileAssistant/SmartFileAssistant.exe`.
 3.  No Python installation required.
 
 ### Option 2: Run from Source

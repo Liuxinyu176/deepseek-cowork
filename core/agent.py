@@ -71,67 +71,69 @@ class CodeWorker(QThread):
                 pass
 
     def run(self):
+        temp_path = None
         try:
-            validate_code_safety(self.code, self.cwd)
-        except SecurityError as e:
-            self.output_signal.emit(f"❌ {str(e)}")
-            self.finished_signal.emit()
-            return
+            # 1. Validation
+            try:
+                validate_code_safety(self.code, self.cwd)
+            except SecurityError as e:
+                self.output_signal.emit(f"❌ {str(e)}")
+                # We will let the finally block emit finished_signal
+                return
 
-        # Prepend input() override to capture user interaction
-        input_override = """
+            # Prepend input() override to capture user interaction
+            input_override = """
 import sys
 def input(prompt=""):
     print(f"__REQUEST_INPUT__:{prompt}", flush=True)
     return sys.stdin.readline().strip()
 """
-        full_code = input_override + "\n" + self.code
+            full_code = input_override + "\n" + self.code
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
-            f.write(full_code)
-            temp_path = f.name
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+                f.write(full_code)
+                temp_path = f.name
 
-        # Determine python executable
-        python_exe = sys.executable
-        if getattr(sys, 'frozen', False):
-            # If frozen (packaged), sys.executable is the exe itself.
-            # We need to find the system python or bundled python to run the script.
-            
-            # Check for bundled python in 'python_env' subdirectory
-            # For onedir: os.path.dirname(sys.executable)/python_env/python.exe
-            # For onefile: sys._MEIPASS/python_env/python.exe
-            
-            base_dir = os.path.dirname(sys.executable)
-            possible_paths = [
-                os.path.join(base_dir, "python_env", "python.exe"),
-                os.path.join(base_dir, "_internal", "python_env", "python.exe")
-            ]
-            
-            if hasattr(sys, '_MEIPASS'):
-                possible_paths.insert(0, os.path.join(sys._MEIPASS, "python_env", "python.exe"))
-            
-            python_exe = "python" # Default fallback
-            
-            found_bundled = False
-            for p in possible_paths:
-                if os.path.exists(p):
-                    python_exe = p
-                    found_bundled = True
-                    break
-            
-            if not found_bundled:
-                # Try finding 'python' in PATH
-                import shutil
-                sys_python = shutil.which("python")
-                if sys_python:
-                    python_exe = sys_python
-                else:
-                    # Fallback: try standard install paths or warn user
-                    self.output_signal.emit("⚠️ Warning: Bundled Python not found and System 'python' not found in PATH.")
-                    # We stick to sys.executable but it likely won't work for scripts if onefile
-                    python_exe = "python" 
+            # Determine python executable
+            python_exe = sys.executable
+            if getattr(sys, 'frozen', False):
+                # If frozen (packaged), sys.executable is the exe itself.
+                # We need to find the system python or bundled python to run the script.
+                
+                # Check for bundled python in 'python_env' subdirectory
+                # For onedir: os.path.dirname(sys.executable)/python_env/python.exe
+                # For onefile: sys._MEIPASS/python_env/python.exe
+                
+                base_dir = os.path.dirname(sys.executable)
+                possible_paths = [
+                    os.path.join(base_dir, "python_env", "python.exe"),
+                    os.path.join(base_dir, "_internal", "python_env", "python.exe")
+                ]
+                
+                if hasattr(sys, '_MEIPASS'):
+                    possible_paths.insert(0, os.path.join(sys._MEIPASS, "python_env", "python.exe"))
+                
+                python_exe = "python" # Default fallback
+                
+                found_bundled = False
+                for p in possible_paths:
+                    if os.path.exists(p):
+                        python_exe = p
+                        found_bundled = True
+                        break
+                
+                if not found_bundled:
+                    # Try finding 'python' in PATH
+                    import shutil
+                    sys_python = shutil.which("python")
+                    if sys_python:
+                        python_exe = sys_python
+                    else:
+                        # Fallback: try standard install paths or warn user
+                        self.output_signal.emit("⚠️ Warning: Bundled Python not found and System 'python' not found in PATH.")
+                        # We stick to sys.executable but it likely won't work for scripts if onefile
+                        python_exe = "python" 
 
-        try:
             if self.is_stopped: return
 
             self.output_signal.emit(f"Running with {python_exe} in: {self.cwd}...")
@@ -168,16 +170,21 @@ def input(prompt=""):
             if not self.is_stopped:
                 stderr = self.process.stderr.read()
                 if stderr:
-                    self.output_signal.emit(f"Error: {stderr}")
-
-            self.process.wait()
+                    self.output_signal.emit(f"Error Output:\n{stderr}")
+            
         except Exception as e:
-            self.output_signal.emit(f"Execution failed: {str(e)}")
+            self.output_signal.emit(f"Execution Error: {e}")
+            # Also print to console for debugging
+            import traceback
+            traceback.print_exc()
+            
         finally:
-            try:
-                os.remove(temp_path)
-            except:
-                pass
+            # Clean up temp file
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
             self.finished_signal.emit()
 
 class LLMWorker(QThread):
