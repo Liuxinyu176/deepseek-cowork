@@ -1,21 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 import os
+from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 
 python_prefix = sys.exec_prefix
-# Bundle the Python environment (excluding unnecessary dev files)
-# This allows the agent to execute code without requiring the user to install Python
-# We exclude 'Scripts' to save space, but ensure 'Lib' and 'DLLs' are included.
-python_env = Tree(python_prefix, prefix='python_env', excludes=['Doc', 'tcl', 'Tools', 'include', 'libs', 'Scripts', 'share', 'test', '__pycache__'])
+python_env = Tree(
+    python_prefix,
+    prefix='python_env',
+    excludes=['Doc', 'tcl', 'Tools', 'include', 'libs', 'Scripts', 'share', 'test', '__pycache__']
+)
+
+pyside6_hidden = collect_submodules('PySide6')
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
     datas=[('skills', 'skills'), ('config.json', '.')],
-    hiddenimports=[],
+    hiddenimports=pyside6_hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

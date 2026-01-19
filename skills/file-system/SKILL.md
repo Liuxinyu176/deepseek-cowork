@@ -1,10 +1,12 @@
 ---
 name: file-system
 description: Provides capabilities to list and read files in the user's workspace.
+description_cn: 提供在用户工作区中列出、读取和操作文件的能力。
 license: Apache-2.0
 metadata:
   author: cowork-team
   version: "1.0"
+security_level: high
 allowed-tools: list_files read_file rename_file
 ---
 

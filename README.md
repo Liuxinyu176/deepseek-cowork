@@ -11,15 +11,19 @@ Unlike traditional chatbots, this assistant uses a **Chain-of-Thought (CoT)** ap
 ## 🚀 Key Features
 
 *   **🧠 DeepSeek Reasoning Core**: Utilizes the "Reasoning-Coding" pattern. The agent thinks through the problem (`<think>`) before taking action, ensuring higher accuracy for complex tasks.
-*   **🔌 Modular Skill System**: Built on an MCP-inspired architecture. Capabilities are modular "Skills" (e.g., `file-system`, `agent-manager`) that can be easily extended.
+    *   **Real-time Thinking**: The "Reasoning" process is displayed in real-time in the right-side "Task Monitor" panel, keeping the main chat area clean with only final answers.
+*   **🔌 Modular Skills Center**: 
+    *   **Visual Management**: Built-in "Skills Center" panel to visually manage installed skills.
+    *   **Categorized Display**: Automatically separates "Standard Skills" and "AI Generated Skills" for better organization using tabs.
+    *   **Dynamic Extension**: The agent can solidify reusable algorithmic logic into new skills, evolving over time.
 *   **🛡️ Secure Execution**:
     *   **Workspace Sandbox**: Operations are strictly confined to the user-selected directory.
     *   **AST Analysis**: Static code analysis prevents unauthorized path access (e.g., `../`, absolute paths) before execution.
+    *   **Security Policy**: The agent is explicitly instructed to only create new skills for algorithmic/system operations, avoiding misuse.
 *   **🤖 Multi-Agent Dispatch**: Capable of spawning sub-agents (`agent-manager`) to handle parallel tasks independently.
 *   **💾 Auto-Save History**: Chat sessions are automatically saved and restored, allowing seamless continuation of tasks.
-*   **✨ Dynamic Skill Learning**: The agent can turn successful code solutions into reusable skills permanently, expanding its capabilities over time.
-*   **🛡️ Enhanced Safety**: Critical operations (like file deletion) trigger explicit user confirmation popups to prevent accidental data loss.
-*   **🖥️ Modern UI**: Built with **PySide6** (Qt for Python), offering a responsive and native desktop experience with foldable reasoning logs.
+*   **⏯️ Real-time Control**: Supports pausing/resuming tasks at any time, and forcibly stopping execution if stuck in a loop.
+*   **🖥️ Modern UI**: Built with **PySide6** (Qt for Python), offering a responsive and native desktop experience.
 
 ## 📦 Installation
 
@@ -52,7 +56,7 @@ Unlike traditional chatbots, this assistant uses a **Chain-of-Thought (CoT)** ap
 1.  **Configuration**:
     *   Launch the app and click the **⚙️ Settings** button.
     *   Enter your **DeepSeek API Key** (and optional Base URL).
-    *   Enable/Disable specific Skills as needed.
+    *   Check and manage enabled skills in the "Skills Center".
 
 2.  **Select Workspace**:
     *   Click "Select Workspace" to choose the folder you want the agent to work on. **The agent has NO access to files outside this folder.**
@@ -62,25 +66,28 @@ Unlike traditional chatbots, this assistant uses a **Chain-of-Thought (CoT)** ap
         *   *"Rename all .txt files in this folder to .md"*
         *   *"Read data.csv and tell me the average value of the 'Price' column"*
         *   *"Create a new folder named 'backup' and move all images there"*
-    *   Watch the **Thinking** process (click to expand) to understand how the agent plans the task.
+    *   Watch the **Thinking** process in the right panel to understand how the agent plans the task.
+
+4.  **Control Tasks**:
+    *   Use the **⏸️ Pause** and **⏹️ Stop** buttons at the bottom to control the AI execution flow in real-time.
 
 ## 🏗️ Architecture
 
 The project follows a modular design:
 
 *   **`core/`**:
-    *   `agent.py`: Manages the LLM interaction and conversation history.
-    *   `skill_manager.py`: Handles dynamic loading of tools and schema generation.
+    *   `agent.py`: Manages LLM interaction, System Prompt policies (including skill creation restrictions), and conversation history.
+    *   `skill_manager.py`: Handles dynamic tool loading, metadata parsing (supports multi-language descriptions), and categorization.
     *   `config_manager.py`: Persists user settings.
 *   **`skills/`**:
-    *   Plugins that extend functionality. Each skill (e.g., `file-system`) has its own `impl.py` and `SKILL.md` definition.
-*   **`main.py`**: The PySide6 GUI entry point.
+    *   Plugins that extend functionality. Each skill (e.g., `file-system`) has its own `impl.py` and `SKILL.md` definition (supporting `description_cn`).
+*   **`main.py`**: The PySide6 GUI entry point, including the main window, Skills Center dialog (Tabbed view), chat bubble components, etc.
 
 ## 🛠️ Developing New Skills
 
 To add a new skill:
 1.  Create a folder in `skills/` (e.g., `skills/git-helper`).
-2.  Add `SKILL.md` to define the skill's purpose and prompts.
+2.  Add `SKILL.md` to define the skill's purpose and prompts (adding `description_cn` is recommended).
 3.  Add `impl.py` with Python functions. The `SkillManager` will automatically detect and register these functions as tools for the LLM.
 
 ## 📄 License

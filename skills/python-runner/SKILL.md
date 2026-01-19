@@ -1,6 +1,7 @@
 ---
 name: python-runner
 description: Execute Python code to perform tasks that are not covered by other tools.
+description_cn: 执行 Python 代码以完成其他工具未涵盖的任务。
 license: Apache-2.0
 metadata:
   author: cowork-team

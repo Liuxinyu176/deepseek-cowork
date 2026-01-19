@@ -7,7 +7,11 @@ def ask_user_confirmation(message):
     Args:
         message (str): The message to display.
     """
-    if ask_user(message):
+    result = ask_user(message)
+    if result is True:
         return "User confirmed (Yes)."
-    else:
+    elif result is False:
         return "User denied (No)."
+    else:
+        # User provided text input
+        return f"User replied: {result}"

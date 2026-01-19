@@ -191,6 +191,7 @@ class LLMWorker(QThread):
     """后台调用 LLM API 的线程，支持 Tool Calls 和多轮思考"""
     finished_signal = Signal(dict)
     step_signal = Signal(str) # 用于输出中间步骤日志
+    skill_used_signal = Signal(str) # Signal to report active skill usage
 
     def __init__(self, messages, config_manager, workspace_dir=None, parent_agent_id=None):
         super().__init__()
@@ -233,12 +234,10 @@ class LLMWorker(QThread):
             f"Current Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "Note: You are operating within the specified workspace. All file operations should be relative to this path unless explicitly absolute and allowed.",
             "Capability: You can create new skills/tools using 'create_new_skill'.",
-            "Policy [IMPORTANT]: When you solve a task by generating and executing Python code (via 'run_python_code' or similar), you MUST evaluate if this code is reusable.",
-            "If the code is a reusable solution (e.g., a utility function, a specific calculation, a file operation):",
-            "1. Refactor the code into a clean, standalone Python function.",
-            "2. IMMEDIATELY use the 'create_new_skill' tool to save this function as a new local skill.",
-            "3. Use a descriptive skill_name (e.g., 'image-resizer') and tool_name (e.g., 'resize_image').",
-            "4. Inform the user that you have saved this capability as a new skill for future use.",
+            "Policy [SKILL CREATION]:",
+            "1. ONLY create new skills for reusable *algorithmic* or *system operation* tasks (e.g., specific file processing, complex calculations, data transformation).",
+            "2. DO NOT create skills for tasks that you can perform naturally as an LLM (e.g., text summarization, translation, creative writing, code explanation). Just output the result directly.",
+            "3. When you encounter a task that requires a new reusable tool, define it as a skill.",
             "",
             "Policy [INTERACTION]: If you need to ask the user a question or get confirmation (e.g., for deleting files, clarification, or next steps), you MUST use the 'ask_user_confirmation' tool.",
             "DO NOT ask the question in the text response. The text response is for reasoning and final answers only. Use the tool to trigger a popup dialog."
@@ -288,7 +287,8 @@ class LLMWorker(QThread):
                     reasoning = getattr(msg, 'reasoning_content', "") or ""
                     if reasoning:
                         full_reasoning += f"\n[Step {turn_count}]: {reasoning}"
-                        self.step_signal.emit(f"Thinking: {reasoning[:50]}...")
+                        # Emit full reasoning with a special prefix so UI can handle it
+                        self.step_signal.emit(f"Reasoning: {reasoning}")
 
                     # Append Assistant Message to History
                     current_messages.append(msg)
@@ -325,6 +325,11 @@ class LLMWorker(QThread):
                             name = tool.function.name
                             args = json.loads(tool.function.arguments)
                             self.step_signal.emit(f"Executing Tool: {name}({args})")
+                            
+                            # Report Active Skill
+                            skill_name = self.skill_manager.get_skill_of_tool(name)
+                            if skill_name:
+                                self.skill_used_signal.emit(skill_name)
                             
                             # Execute via Skill Manager
                             # Pass step_signal as context to allow tools to log

@@ -3,6 +3,7 @@ import re
 import importlib.util
 import inspect
 import sys
+import shutil
 
 class SkillManager:
     def __init__(self, workspace_dir=None, config_manager=None):
@@ -35,14 +36,98 @@ class SkillManager:
         self.tools = {} # name -> function
         self.tool_definitions = [] # JSON schemas for LLM
         self.skill_prompts = [] # Markdown content from SKILL.md
+        self.tool_to_skill_map = {} # tool_name -> skill_name
+        self.loaded_skills_meta = {} # skill_name -> metadata dict
         
         self.load_skills()
 
     def set_workspace_dir(self, workspace_dir):
         self.workspace_dir = workspace_dir
 
+    def get_all_skills(self):
+        """
+        Scan all skill directories and return a list of skill info dictionaries.
+        Includes both enabled and disabled skills.
+        """
+        all_skills = []
+        seen_skills = set()
+        
+        for skills_dir in self.skills_dirs:
+            if not os.path.exists(skills_dir):
+                continue
+            
+            for skill_name in os.listdir(skills_dir):
+                if skill_name in seen_skills:
+                    continue
+                
+                skill_path = os.path.join(skills_dir, skill_name)
+                if not os.path.isdir(skill_path):
+                    continue
+                
+                # Default info
+                skill_info = {
+                    "name": skill_name,
+                    "path": skill_path,
+                    "description": "No description available.",
+                    "enabled": True, # Default to true if not in config
+                    "tools": []
+                }
+                
+                # Check config
+                if self.config_manager:
+                    skill_info["enabled"] = self.config_manager.is_skill_enabled(skill_name)
+                
+                # Parse SKILL.md
+                md_path = os.path.join(skill_path, "SKILL.md")
+                if os.path.exists(md_path):
+                    meta, body = self._parse_skill_md_content(md_path)
+                    if meta:
+                        if "description" in meta:
+                            skill_info["description"] = meta["description"]
+                        # Merge all other meta fields
+                        skill_info.update(meta)
+                
+                all_skills.append(skill_info)
+                seen_skills.add(skill_name)
+        
+        return all_skills
+
+    def import_skill(self, source_path):
+        """Import a skill from a local directory"""
+        if not os.path.isdir(source_path):
+            return False, "Source is not a directory"
+            
+        skill_name = os.path.basename(source_path)
+        if not os.path.exists(os.path.join(source_path, "SKILL.md")):
+            return False, "SKILL.md not found in source directory"
+            
+        # Use the user-writable skills directory (last in list usually)
+        # If frozen, it's the one next to exe. If dev, it's repo/skills.
+        target_dir = self.skills_dirs[-1]
+        if not os.path.exists(target_dir):
+            try:
+                os.makedirs(target_dir)
+            except Exception as e:
+                return False, f"Failed to create skills directory: {e}"
+                
+        target_path = os.path.join(target_dir, skill_name)
+        if os.path.exists(target_path):
+            return False, f"Skill '{skill_name}' already exists"
+            
+        try:
+            shutil.copytree(source_path, target_path)
+            return True, f"Skill '{skill_name}' imported successfully"
+        except Exception as e:
+            return False, f"Import failed: {e}"
+
     def load_skills(self):
-        """Scan skills directory and load SKILL.md + implementations"""
+        """Scan skills directory and load SKILL.md + implementations for enabled skills"""
+        self.tools = {}
+        self.tool_definitions = []
+        self.skill_prompts = []
+        self.tool_to_skill_map = {}
+        self.loaded_skills_meta = {}
+        
         for skills_dir in self.skills_dirs:
             if not os.path.exists(skills_dir):
                 continue
@@ -59,29 +144,43 @@ class SkillManager:
                 # 1. Parse SKILL.md
                 md_path = os.path.join(skill_path, "SKILL.md")
                 if os.path.exists(md_path):
-                    self._parse_skill_md(md_path)
+                    self._parse_skill_md(md_path, skill_name)
                 
                 # 2. Load Implementation (impl.py)
                 impl_path = os.path.join(skill_path, "impl.py")
                 if os.path.exists(impl_path):
                     self._load_implementation(skill_name, impl_path)
 
-    def _parse_skill_md(self, md_path):
-        """Extract frontmatter and body"""
+    def _parse_skill_md_content(self, md_path):
+        """Helper to parse MD file and return meta dict and body string"""
         try:
             with open(md_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            # Simple regex to split frontmatter
             match = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)', content, re.DOTALL)
             if match:
                 frontmatter_raw = match.group(1)
                 body = match.group(2).strip()
                 
-                # We could parse YAML here, but for now we just extract the body 
-                # to inject into System Prompt later if needed.
-                if body:
-                    self.skill_prompts.append(body)
+                meta = {}
+                for line in frontmatter_raw.split('\n'):
+                    if ':' in line:
+                        key, val = line.split(':', 1)
+                        meta[key.strip()] = val.strip().strip('"').strip("'")
+                return meta, body
+            return {}, content
+        except Exception:
+            return {}, ""
+
+    def _parse_skill_md(self, md_path, skill_name):
+        """Extract frontmatter and body"""
+        try:
+            meta, body = self._parse_skill_md_content(md_path)
+            if meta:
+                self.loaded_skills_meta[skill_name] = meta
+            
+            if body:
+                self.skill_prompts.append(body)
         except Exception as e:
             print(f"Error parsing {md_path}: {e}")
 
@@ -99,6 +198,7 @@ class SkillManager:
                 # Register tool
                 # Note: We bind workspace_dir later during execution or partial
                 self.tools[name] = func
+                self.tool_to_skill_map[name] = skill_name
                 
                 # Generate JSON Schema dynamically
                 sig = inspect.signature(func)
@@ -161,6 +261,10 @@ class SkillManager:
                 
         except Exception as e:
             print(f"Error loading implementation {impl_path}: {e}")
+
+    def get_skill_of_tool(self, tool_name):
+        return self.tool_to_skill_map.get(tool_name)
+
 
     def get_tool_definitions(self):
         return self.tool_definitions

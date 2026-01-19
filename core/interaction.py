@@ -13,19 +13,22 @@ class InteractionBridge(QObject):
         self._event = threading.Event()
         self._result = False
 
-    def ask_user(self, message: str) -> bool:
+    def ask_user(self, message: str):
         """
         Called by worker thread to ask for user confirmation.
         Blocks until the UI thread responds.
+        Returns: bool (Yes/No) or str (User Input)
         """
         self._event.clear()
         self.request_confirmation_signal.emit(message)
         self._event.wait() # Block until UI responds
         return self._result
 
-    def respond(self, result: bool):
+    def respond(self, result):
         """
         Called by UI thread to provide the response.
+        Args:
+            result: bool or str
         """
         self._result = result
         self._event.set()
@@ -33,6 +36,6 @@ class InteractionBridge(QObject):
 # Global instance
 bridge = InteractionBridge()
 
-def ask_user(message: str) -> bool:
+def ask_user(message: str):
     """Helper function to be used by skills"""
     return bridge.ask_user(message)

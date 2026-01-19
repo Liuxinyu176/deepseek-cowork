@@ -70,10 +70,22 @@ def dispatch_agents(workspace_dir, tasks, _context=None):
         workers.append(worker)
         step_signal.emit(f"Manager: Started {agent_id} on task: {task[:30]}...")
 
-    # Wait for all workers to finish
-    # Since we are in a thread, we can block.
+    # Wait for all workers to finish using an event loop to allow signal processing
+    # This ensures that signals (logs, results) from sub-agents are processed by the current thread.
+    loop = QEventLoop()
+    active_count = len(workers)
+    
+    def on_finished(res):
+        nonlocal active_count
+        active_count -= 1
+        if active_count <= 0:
+            loop.quit()
+            
     for worker in workers:
-        worker.wait()
+        worker.finished_signal.connect(on_finished)
+        
+    if active_count > 0:
+        loop.exec()
         
     step_signal.emit("Manager: All sub-agents finished.")
     

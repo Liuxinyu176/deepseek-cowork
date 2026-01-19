@@ -116,7 +116,8 @@ def delete_file(workspace_dir, path):
             return f"Error: File '{path}' does not exist."
             
         # Ask for confirmation
-        if not ask_user(f"⚠️ DANGER: Are you sure you want to delete '{path}'?"):
+        # Strict check for True (Yes button). Any text response or False counts as cancellation for safety.
+        if ask_user(f"⚠️ DANGER: Are you sure you want to delete '{path}'?") is not True:
             return "Error: Deletion cancelled by user."
 
         if os.path.isfile(abs_path):
