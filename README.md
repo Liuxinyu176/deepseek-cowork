@@ -1,8 +1,8 @@
-# Smart File Assistant (DeepSeek Edition)
+# DeepSeek Cowork
 
 [中文文档](README_CN.md) | [English](README.md)
 
-Smart File Assistant is a powerful desktop application that leverages **DeepSeek's advanced reasoning models (R1/V3)** to automate complex file operations through natural language.
+DeepSeek Cowork is a powerful desktop application that leverages **DeepSeek's advanced reasoning models (R1/V3)** to automate complex file operations through natural language.
 
 Unlike traditional chatbots, this assistant uses a **Chain-of-Thought (CoT)** approach to plan, generate, and safely execute Python code to fulfill your requests—whether it's batch renaming files, analyzing data, or restructuring project directories.
 
@@ -28,8 +28,8 @@ Unlike traditional chatbots, this assistant uses a **Chain-of-Thought (CoT)** ap
 ## 📦 Installation
 
 ### Option 1: Run from Executable (Windows)
-1.  Download and unzip `dist/SmartFileAssistant.zip`.
-2.  Run `SmartFileAssistant/SmartFileAssistant.exe`.
+1.  Download and unzip `dist/deepseek-cowork.zip`.
+2.  Run `deepseek-cowork/deepseek-cowork.exe`.
 3.  No Python installation required.
 
 ### Option 2: Run from Source
@@ -37,8 +37,8 @@ Unlike traditional chatbots, this assistant uses a **Chain-of-Thought (CoT)** ap
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/chuancyzhang/smart-file-assistant.git
-    cd smart-file-assistant
+    git clone https://github.com/chuancyzhang/deepseek-cowork.git
+    cd deepseek-cowork
     ```
 
 2.  Install dependencies:

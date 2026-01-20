@@ -1,4 +1,4 @@
-# 智能文件助手 (Smart File Assistant) - 产品文档
+# DeepSeek Cowork - 产品文档
 
 ## 1. 产品概述 (Product Overview)
 

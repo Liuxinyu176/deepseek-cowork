@@ -1,6 +1,6 @@
-# 智能文件助手 (DeepSeek 版)
+# DeepSeek Cowork
 
-智能文件助手是一款强大的桌面应用程序，利用 **DeepSeek 先进的推理模型 (R1/V3)**，通过自然语言自动执行复杂的文件操作。
+DeepSeek Cowork 是一款强大的桌面应用程序，利用 **DeepSeek 先进的推理模型 (R1/V3)**，通过自然语言自动执行复杂的文件操作。
 
 与传统的聊天机器人不同，本助手采用 **思维链 (Chain-of-Thought, CoT)** 方法来规划、生成并安全地执行 Python 代码以完成您的请求——无论是批量重命名文件、分析数据，还是重组项目目录。
 
@@ -26,8 +26,8 @@
 ## 📦 安装
 
 ### 选项 1: 运行可执行文件 (Windows)
-1.  下载并解压 `dist/SmartFileAssistant.zip`。
-2.  运行 `SmartFileAssistant/SmartFileAssistant.exe`。
+1.  下载并解压 `dist/deepseek-cowork.zip`。
+2.  运行 `deepseek-cowork/deepseek-cowork.exe`。
 3.  无需安装 Python。
 
 ### 选项 2: 源码运行
@@ -35,8 +35,8 @@
 
 1.  克隆仓库:
     ```bash
-    git clone https://github.com/chuancyzhang/smart-file-assistant.git
-    cd smart-file-assistant
+    git clone https://github.com/chuancyzhang/deepseek-cowork.git
+    cd deepseek-cowork
     ```
 
 2.  安装依赖:

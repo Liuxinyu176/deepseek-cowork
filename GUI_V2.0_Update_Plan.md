@@ -1,4 +1,4 @@
-# Smart File Assistant GUI V2.0 交互优化计划
+# DeepSeek Cowork GUI V2.0 交互优化计划
 
 > 目标：让不会编程的普通用户，在 **Windows / macOS** 上，都能像使用普通桌面软件一样，自然地完成文件处理任务，而不需要理解「工作区」「技能」「LLM」这些概念。
 

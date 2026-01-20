@@ -438,7 +438,7 @@ class TaskMonitorWidget(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Smart File Assistant (DeepSeek Mode)")
+        self.setWindowTitle("DeepSeek Cowork")
         self.resize(1000, 800)
         self.workspace_dir = None
         self.setStyleSheet("""
@@ -479,7 +479,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.setContentsMargins(16, 16, 16, 16)
         sidebar_layout.setSpacing(16)
 
-        app_title = QLabel("Smart File Assistant")
+        app_title = QLabel("DeepSeek Cowork")
         app_title.setProperty("roleTitle", True)
         app_subtitle = QLabel("文件助手 · DeepSeek")
         app_subtitle.setProperty("roleSubtitle", True)
