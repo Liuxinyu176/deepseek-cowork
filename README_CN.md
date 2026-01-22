@@ -28,9 +28,10 @@ DeepSeek Cowork 是一款基于 **DeepSeek-V3.2 交错思维链 (Interleaved Cha
 ## 📦 安装
 
 ### 选项 1: 运行可执行文件 (Windows)
-1.  下载并解压 `dist/deepseek-cowork.zip`。
-2.  运行 `deepseek-cowork/deepseek-cowork.exe`。
-3.  无需安装 Python。
+1.  前往 [Releases](../../releases) 页面。
+2.  下载最新的 `deepseek-cowork-vX.X.zip`。
+3.  解压并运行 `deepseek-cowork/deepseek-cowork.exe`。
+4.  无需安装 Python。
 
 ### 选项 2: 源码运行
 **前提条件**: Python 3.10+

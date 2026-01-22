@@ -32,9 +32,10 @@ Unlike traditional chatbots, this assistant utilizes the **DeepSeek-V3.2** model
 ## 📦 Installation
 
 ### Option 1: Run from Executable (Windows)
-1.  Download and unzip `dist/deepseek-cowork.zip`.
-2.  Run `deepseek-cowork/deepseek-cowork.exe`.
-3.  No Python installation required.
+1.  Go to the [Releases](../../releases) page.
+2.  Download the latest `deepseek-cowork-vX.X.zip`.
+3.  Unzip and run `deepseek-cowork/deepseek-cowork.exe`.
+4.  No Python installation required.
 
 ### Option 2: Run from Source
 **Prerequisites**: Python 3.10+

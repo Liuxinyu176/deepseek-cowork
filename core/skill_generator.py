@@ -59,3 +59,66 @@ Return ONLY a JSON object with the following structure (no markdown, no extra te
             return json.loads(content)
         except Exception as e:
             return {"error": str(e)}
+
+    def generate_skill_from_repo(self, repo_context: str, user_requirement: str) -> dict:
+        """
+        Generate a wrapper skill for a GitHub repository based on its analysis context.
+        """
+        if not self.api_key or not OPENAI_AVAILABLE:
+            return {"error": "LLM not available or API key missing"}
+
+        system_prompt = """You are an Expert Python Developer and AI Skill Creator.
+Your task is to create a Python Wrapper Skill for an open-source project based on the provided Repository Analysis.
+
+The wrapper should expose the project's core functionality as a Python function that can be called by an AI Agent.
+
+Strategies:
+1. **CLI Wrapper**: If the project is a CLI tool (has main.py, argparse, or usage in README), use `subprocess` to call it.
+   - If it is a standard pip package (e.g., yt-dlp), prefer `subprocess.run(['executable', ...])`.
+   - If it is a standalone script, use `subprocess.run([sys.executable, 'path/to/script.py', ...])`.
+2. **Library Wrapper**: If it's a library, import it and use its API.
+
+Requirements:
+1. **Functionality**: Fulfill the user's specific requirement (or the main capability of the repo).
+2. **Dependencies**: The code MUST include a check to install dependencies if missing.
+   Example:
+   ```python
+   try:
+       import some_lib
+   except ImportError:
+       import subprocess, sys
+       subprocess.check_call([sys.executable, "-m", "pip", "install", "some_lib"])
+       import some_lib
+   ```
+3. **Robustness**: Handle errors and return string output.
+4. **Naming**: Snake_case for function, kebab-case for skill name.
+
+Output Format:
+Return ONLY a JSON object:
+{
+    "skill_name": "repo-name-wrapper",
+    "tool_name": "tool_function_name",
+    "description": "English description.",
+    "description_cn": "Chinese description.",
+    "code": "def tool_function_name(...): ..."
+}
+"""
+
+        user_prompt = f"User Requirement: {user_requirement}\n\nRepository Context:\n{repo_context}"
+
+        try:
+            client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2
+            )
+            
+            content = response.choices[0].message.content
+            return json.loads(content)
+        except Exception as e:
+            return {"error": str(e)}

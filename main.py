@@ -16,7 +16,7 @@ from core.agent import LLMWorker, CodeWorker
 from core.skill_generator import SkillGenerator
 from skills.skill_creator.impl import create_new_skill
 from core.interaction import bridge
-from PySide6.QtGui import QAction, QTextOption, QIcon
+from PySide6.QtGui import QAction, QTextOption, QIcon, QFontMetrics
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget)
 from PySide6.QtCore import Qt, QThread, Signal
@@ -904,7 +904,15 @@ class MainWindow(QMainWindow):
 
     def load_workspace(self, directory):
         self.workspace_dir = directory
-        self.ws_label.setText(f"当前工作区: {directory}")
+        
+        # Optimize path display using QFontMetrics
+        # Calculate available width: Window(~1000) - Sidebar(260) - Margins(64) - Buttons(~150) = ~526
+        # Use 450px to be safe and ensure UI doesn't break
+        font_metrics = QFontMetrics(self.ws_label.font())
+        display_path = font_metrics.elidedText(directory, Qt.ElideMiddle, 450)
+            
+        self.ws_label.setText(f"当前工作区: {display_path}")
+        self.ws_label.setToolTip(directory) # Show full path on hover
         self.ws_label.setStyleSheet("color: green; font-weight: bold;")
         self.append_log(f"System: 工作区已切换至 {directory}")
         self.update_recent_workspaces(directory)
@@ -1192,7 +1200,17 @@ class MainWindow(QMainWindow):
         self.code_worker.provide_input(response)
 
 if __name__ == "__main__":
+    # 1. Enable High DPI Scaling
+    # Qt 6 automatically handles this, but setting the policy can help with fractional scaling (e.g. 150%)
+    if hasattr(Qt, 'HighDpiScaleFactorRoundingPolicy'):
+        QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    
     app = QApplication(sys.argv)
+    
+    # 2. Force Fusion Style for consistent look across Windows versions
+    # This avoids issues where system theme (Dark/Light) breaks hardcoded colors
+    app.setStyle("Fusion")
+    
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

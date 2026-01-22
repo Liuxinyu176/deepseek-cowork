@@ -97,8 +97,10 @@ V3.0 将不再局限于“文件自动化工具”，而是升级为 **“可无
     - [x] UI 支持：在代码执行卡片增加“保存为技能”按钮。
     - [x] 逻辑泛化：利用 LLM 将当前会话中的一次性代码重构为通用函数（参数提取、去硬编码）。
     - [x] 自动注册：调用 `skill-creator` 生成持久化文件。
-- [ ] 优化 `Skill Creator`，增强对 GitHub 仓库的分析能力（结合 Web Search Skill）。
-- [ ] 实现 `yt-dlp` 的完整封装案例，打通“环境依赖自动安装”流程。
+- [x] 优化 `Skill Creator`，增强对 GitHub 仓库的分析能力（结合 Web Search Skill）。
+    - [x] 新增 `github-tools` 技能（Clone, Analyze）。
+    - [x] 升级 `SkillGenerator` 支持仓库上下文生成。
+- [x] 实现 `yt-dlp` 的完整封装案例，打通“环境依赖自动安装”流程。
 - [ ] 实现 Skill 的持久化存储与热加载。
 
 ### Phase 3: 平台化与自进化
