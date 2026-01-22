@@ -49,6 +49,19 @@ DeepSeek-V3.2 允许在 `<think>` 阶段直接发起工具调用。
 *   **安全沙箱**: 所有的工具调用（无论是思考过程中的探索，还是最终的执行）都受到严格限制。
     *   **Read-Only Tools**: 在思考阶段，模型倾向于使用只读工具（`list_files`, `read_file`）来收集信息。
     *   **Write Tools**: 修改操作（`write_file`, `delete_file`）通常在思考成熟后，或在用户确认后执行。
+*   **Environment Abstraction (`env_utils`)**:
+    *   为了支持 `PyInstaller` 打包后的独立运行，我们抽象了 Python 环境检测逻辑。
+    *   **Dev Mode**: 直接使用当前的 `sys.executable`。
+    *   **Frozen Mode**: 自动寻找打包在 `_internal` 或 `_MEIPASS` 中的 `python_env`，确保 `pip install` 和子进程调用能正确执行。
+
+### 2.4 Skill System & Self-Evolution
+*   **Dual-Layer Storage**:
+    *   `skills/`: 只读的系统核心技能（如文件系统、Github 工具）。
+    *   `ai_skills/`: 可读写的 AI 生成技能（如 `yt-dlp-wrapper`）。
+*   **Experience Tracking**:
+    *   Agent 在执行技能时，如果遇到错误并成功修复（例如“缺少依赖 -> 安装依赖 -> 成功”），会调用 `update_skill_experience`。
+    *   系统会将这条经验（"Experience"）追加到 `SKILL.md` 的 Frontmatter 中。
+    *   下次加载该技能时，`SkillManager` 会将这些经验注入到 System Prompt 中，实现“吃一堑长一智”。
 
 ---
 
