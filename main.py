@@ -117,11 +117,16 @@ class SkillsCenterDialog(QDialog):
         self.layout_ai.addWidget(self.scroll_ai)
         self.tabs.addTab(self.tab_ai, "AI 生成的技能")
         
-        # Bottom Bar (Import)
+        # Bottom Bar (Import & Refresh)
         bottom_layout = QHBoxLayout()
         import_btn = QPushButton("📦 导入新功能包")
         import_btn.clicked.connect(self.import_skill)
         bottom_layout.addWidget(import_btn)
+        
+        refresh_btn = QPushButton("🔄 刷新列表")
+        refresh_btn.clicked.connect(self.manual_refresh)
+        bottom_layout.addWidget(refresh_btn)
+
         bottom_layout.addStretch()
         close_btn = QPushButton("关闭")
         close_btn.clicked.connect(self.accept)
@@ -129,6 +134,11 @@ class SkillsCenterDialog(QDialog):
         layout.addLayout(bottom_layout)
         
         self.refresh_list()
+
+    def manual_refresh(self):
+        self.skill_manager.load_skills()
+        self.refresh_list()
+        QMessageBox.information(self, "刷新成功", "已重新扫描并加载所有技能模块。")
 
     def refresh_list(self):
         # Clear existing
@@ -171,6 +181,32 @@ class SkillsCenterDialog(QDialog):
         
         v_layout.addWidget(name_lbl)
         v_layout.addWidget(desc_lbl)
+
+        # Dependencies
+        deps = skill.get('dependencies', [])
+        if deps and isinstance(deps, list):
+            deps_str = ", ".join(deps)
+            deps_lbl = QLabel(f"📦 依赖: {deps_str}")
+            deps_lbl.setStyleSheet("color: #1a73e8; font-size: 11px; margin-top: 4px;")
+            v_layout.addWidget(deps_lbl)
+
+        # Experience (Evolution)
+        exp = skill.get('experience', [])
+        if exp and isinstance(exp, list):
+             exp_frame = QFrame()
+             exp_frame.setStyleSheet("background-color: #f1f8e9; border-radius: 4px; padding: 4px; margin-top: 4px;")
+             exp_layout = QVBoxLayout(exp_frame)
+             exp_layout.setContentsMargins(4,4,4,4)
+             exp_layout.setSpacing(2)
+             exp_header = QLabel(f"📈 进化记录 ({len(exp)})")
+             exp_header.setStyleSheet("font-weight: bold; color: #33691e; font-size: 11px;")
+             exp_layout.addWidget(exp_header)
+             for e in exp:
+                 e_lbl = QLabel(f"• {e}")
+                 e_lbl.setStyleSheet("color: #558b2f; font-size: 10px;")
+                 e_lbl.setWordWrap(True)
+                 exp_layout.addWidget(e_lbl)
+             v_layout.addWidget(exp_frame)
 
         # Security Level
         if 'security_level' in skill:

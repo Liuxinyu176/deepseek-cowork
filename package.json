@@ -1,7 +1,7 @@
 {
   "name": "deepseek-cowork",
-  "version": "1.0.0",
-  "description": "AI-powered file processing agent with zero dependency",
+  "version": "3.0.0",
+  "description": "DeepSeek Cowork V3.0 - AI-powered autonomous agent with self-evolving skills",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

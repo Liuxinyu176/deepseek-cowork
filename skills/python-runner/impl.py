@@ -4,6 +4,7 @@ import tempfile
 import os
 import ast
 import shutil
+from core.env_utils import get_python_executable
 
 class SecurityError(Exception):
     pass
@@ -54,14 +55,7 @@ def run_python_code(workspace_dir, code):
         return f"Error creating temp file: {e}"
 
     # Determine python executable
-    python_exe = sys.executable
-    if getattr(sys, 'frozen', False):
-         # In frozen mode, try to find system python
-         sys_python = shutil.which("python")
-         if sys_python:
-             python_exe = sys_python
-         else:
-             return "Error: System 'python' not found in PATH. Cannot execute scripts in frozen mode."
+    python_exe = get_python_executable()
     
     try:
         # Run subprocess
@@ -83,6 +77,8 @@ def run_python_code(workspace_dir, code):
         
     except subprocess.TimeoutExpired:
         return "Error: Execution timed out (30s)."
+    except FileNotFoundError:
+        return "Error: Executable not found. If you are trying to run a command (like 'ls', 'git'), ensure it is installed and in the system PATH."
     except Exception as e:
         return f"Error executing code: {str(e)}"
     finally:

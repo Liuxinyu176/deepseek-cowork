@@ -185,6 +185,94 @@ class SkillManager:
         except Exception as e:
             return False, f"Import failed: {e}"
 
+    def update_skill_experience(self, skill_name, experience_text):
+        """
+        Append a new experience string to the SKILL.md of the given skill.
+        This enables 'Self-Evolving' capabilities.
+        """
+        # 1. Find the skill path
+        skill_path = None
+        for s_dir in self.skills_dirs:
+            p = os.path.join(s_dir, skill_name)
+            if os.path.isdir(p):
+                skill_path = p
+                break
+        
+        if not skill_path:
+            return False, f"Skill '{skill_name}' not found."
+        
+        md_path = os.path.join(skill_path, "SKILL.md")
+        if not os.path.exists(md_path):
+            return False, f"SKILL.md not found for '{skill_name}'."
+
+        try:
+            # 2. Read existing content
+            with open(md_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 3. Parse Frontmatter
+            match = re.match(r'^---\s*\n(.*?)\n---\s*\n(.*)', content, re.DOTALL)
+            if not match:
+                return False, "Invalid SKILL.md format (missing frontmatter)."
+            
+            frontmatter_raw = match.group(1)
+            body = match.group(2)
+            
+            lines = frontmatter_raw.split('\n')
+            new_lines = []
+            exp_found = False
+            
+            # 4. Update Frontmatter
+            # We need to robustly handle the YAML-like structure. 
+            # If 'experience:' exists, we append to it.
+            # If not, we add it.
+            
+            # Simple approach: Check if 'experience:' line exists
+            # Note: This simple parser assumes one-line list or multi-line standard yaml.
+            # Our parser supports [item1, item2].
+            
+            # Let's rebuild the frontmatter lines
+            for line in lines:
+                if line.strip().startswith('experience:'):
+                    # Found existing experience field
+                    # We need to parse the existing list and add to it
+                    key, val = line.split(':', 1)
+                    val = val.strip()
+                    current_exp = []
+                    if val.startswith('[') and val.endswith(']'):
+                        inner = val[1:-1]
+                        if inner.strip():
+                            current_exp = [v.strip().strip('"\'') for v in inner.split(',')]
+                    
+                    if experience_text not in current_exp:
+                        current_exp.append(experience_text)
+                    
+                    # Re-serialize to JSON-style list for simplicity
+                    # Escape quotes in strings
+                    quoted_exp = [f'"{e.replace('"', '\\"')}"' for e in current_exp]
+                    new_line = f'experience: [{", ".join(quoted_exp)}]'
+                    new_lines.append(new_line)
+                    exp_found = True
+                else:
+                    new_lines.append(line)
+            
+            if not exp_found:
+                # Add new experience field
+                quoted_exp = f'"{experience_text.replace('"', '\\"')}"'
+                new_lines.append(f'experience: [{quoted_exp}]')
+            
+            # 5. Write back
+            new_frontmatter = "\n".join(new_lines)
+            new_content = f"---\n{new_frontmatter}\n---\n{body}"
+            
+            with open(md_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+                
+            return True, f"Experience added to '{skill_name}'."
+            
+        except Exception as e:
+            return False, f"Failed to update experience: {e}"
+
     def load_skills(self):
         """Scan skills directory and load SKILL.md + implementations for enabled skills"""
         self.tools = {}
@@ -232,9 +320,25 @@ class SkillManager:
                 
                 meta = {}
                 for line in frontmatter_raw.split('\n'):
+                    line = line.strip()
+                    if not line or line.startswith('#'): continue
+                    
                     if ':' in line:
                         key, val = line.split(':', 1)
-                        meta[key.strip()] = val.strip().strip('"').strip("'")
+                        key = key.strip()
+                        val = val.strip()
+                        
+                        # Handle simple inline list: [item1, item2]
+                        if val.startswith('[') and val.endswith(']'):
+                            inner = val[1:-1]
+                            if not inner.strip():
+                                val = []
+                            else:
+                                val = [v.strip().strip('"\'') for v in inner.split(',')]
+                        else:
+                            val = val.strip('"\'')
+                            
+                        meta[key] = val
                 return meta, body
             return {}, content
         except Exception:
@@ -247,8 +351,18 @@ class SkillManager:
             if meta:
                 self.loaded_skills_meta[skill_name] = meta
             
-            if body:
-                self.skill_prompts.append(body)
+            # Inject Experience into Prompt if available
+            prompt_content = body
+            if meta and 'experience' in meta:
+                exp_list = meta['experience']
+                if isinstance(exp_list, list) and exp_list:
+                    exp_text = "\n\n### 🧠 Learned Experience (Self-Evolution)\nThe following lessons have been learned from previous executions:\n"
+                    for exp in exp_list:
+                        exp_text += f"- {exp}\n"
+                    prompt_content += exp_text
+            
+            if prompt_content:
+                self.skill_prompts.append(prompt_content)
         except Exception as e:
             print(f"Error parsing {md_path}: {e}")
 

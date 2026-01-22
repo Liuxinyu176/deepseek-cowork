@@ -3,11 +3,12 @@ name: yt-dlp-wrapper
 description: Universal video downloader wrapper for yt-dlp. Supports YouTube and many other sites.
 description_cn: 通用视频下载工具 (yt-dlp 封装)，支持 YouTube、B站等多种视频网站。
 license: MIT
-type: standard
-created_by: system
+type: ai-generated
+created_by: ai-refactor
+dependencies: ["yt-dlp"]
+experience: ["Learned to install 'yt-dlp' via pip when missing."]
 allowed-tools: download_video
 ---
-
 # yt-dlp Wrapper
 
 This skill wraps the powerful `yt-dlp` library to provide video downloading capabilities.

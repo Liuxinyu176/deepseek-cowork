@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import tempfile
 import sys
+import time
 
 def clone_repository(repo_url, workspace_dir=None):
     """
@@ -30,30 +31,46 @@ def clone_repository(repo_url, workspace_dir=None):
             
         target_dir = os.path.join(temp_dir, repo_name)
         
-        # Clean up if exists
-        if os.path.exists(target_dir):
-            try:
-                # Windows might have file lock issues with git, retry or ignore
-                def on_rm_error(func, path, exc_info):
-                    os.chmod(path, 0o777)
-                    func(path)
-                shutil.rmtree(target_dir, onerror=on_rm_error)
-            except Exception as e:
-                return f"Error cleaning up existing directory '{target_dir}': {str(e)}"
+        # Retry logic for network resilience
+        max_retries = 3
+        last_error = ""
+        
+        for attempt in range(1, max_retries + 1):
+            # Clean up if exists (from previous run or failed attempt)
+            if os.path.exists(target_dir):
+                try:
+                    # Windows might have file lock issues with git, retry or ignore
+                    def on_rm_error(func, path, exc_info):
+                        os.chmod(path, 0o777)
+                        func(path)
+                    shutil.rmtree(target_dir, onerror=on_rm_error)
+                except Exception as e:
+                    return f"Error cleaning up existing directory '{target_dir}': {str(e)}"
             
-        # Run git clone
-        # Use --depth 1 for speed
-        cmd = ["git", "clone", "--depth", "1", repo_url, target_dir]
-        
-        # Check if git is available
-        if shutil.which("git") is None:
-            return "Error: 'git' command not found. Please install Git."
+            # Run git clone
+            # Use --depth 1 for speed
+            cmd = ["git", "clone", "--depth", "1", repo_url, target_dir]
+            
+            # Check if git is available
+            if shutil.which("git") is None:
+                return "Error: 'git' command not found. Please install Git."
 
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+            try:
+                subprocess.run(cmd, check=True, capture_output=True, text=True)
+                return target_dir
+            except subprocess.CalledProcessError as e:
+                last_error = e.stderr
+                if attempt < max_retries:
+                    # Wait before retry
+                    time.sleep(2 * attempt)
+                else:
+                    # Fallback suggestion for GitHub connectivity issues
+                    if "github.com" in repo_url and ("Connection was reset" in last_error or "Failed to connect" in last_error):
+                         last_error += "\n(Tip: You might need a proxy or VPN to access GitHub. Or try configuring git proxy: 'git config --global http.proxy ...')"
+                    return f"Error cloning repository after {max_retries} attempts: {last_error}"
         
-        return target_dir
-    except subprocess.CalledProcessError as e:
-        return f"Error cloning repository: {e.stderr}"
+        return f"Error: Failed to clone repository. {last_error}"
+
     except Exception as e:
         return f"Error: {str(e)}"
 

@@ -6,9 +6,12 @@ import ast
 import re
 import json
 import platform
+import time
+import shutil
 from datetime import datetime
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Signal, QObject, QMutex, QWaitCondition
 from core.skill_manager import SkillManager
+from core.env_utils import get_python_executable
 
 try:
     from openai import OpenAI
@@ -102,50 +105,19 @@ def input(prompt=""):
                 temp_path = f.name
 
             # Determine python executable
-            python_exe = sys.executable
-            if getattr(sys, 'frozen', False):
-                # If frozen (packaged), sys.executable is the exe itself.
-                # We need to find the system python or bundled python to run the script.
-                
-                # Check for bundled python in 'python_env' subdirectory
-                # For onedir: os.path.dirname(sys.executable)/python_env/python.exe
-                # For onefile: sys._MEIPASS/python_env/python.exe
-                
-                base_dir = os.path.dirname(sys.executable)
-                possible_paths = [
-                    os.path.join(base_dir, "python_env", "python.exe"),
-                    os.path.join(base_dir, "_internal", "python_env", "python.exe")
-                ]
-                
-                if hasattr(sys, '_MEIPASS'):
-                    possible_paths.insert(0, os.path.join(sys._MEIPASS, "python_env", "python.exe"))
-                
-                python_exe = "python" # Default fallback
-                
-                found_bundled = False
-                for p in possible_paths:
-                    if os.path.exists(p):
-                        python_exe = p
-                        found_bundled = True
-                        break
-                
-                if not found_bundled:
-                    # Try finding 'python' in PATH
-                    import shutil
-                    sys_python = shutil.which("python")
-                    if sys_python:
-                        python_exe = sys_python
-                    else:
-                        # Fallback: try standard install paths or warn user
-                        self.output_signal.emit("⚠️ Warning: Bundled Python not found and System 'python' not found in PATH.")
-                        # We stick to sys.executable but it likely won't work for scripts if onefile
-                        python_exe = "python" 
+            python_exe = get_python_executable()
 
             if self.is_stopped: return
 
             # Force environment variables for UTF-8 encoding
             env = os.environ.copy()
             env["PYTHONIOENCODING"] = "utf-8"
+            
+            # In frozen mode, we might need to adjust PATH to include the bundled python dir
+            # so that subprocesses can find DLLs etc. (optional but good practice)
+            if getattr(sys, 'frozen', False):
+                 python_dir = os.path.dirname(python_exe)
+                 env["PATH"] = python_dir + os.pathsep + env.get("PATH", "")
 
             self.output_signal.emit(f"Running with {python_exe} in: {self.cwd}...")
             self.process = subprocess.Popen(
@@ -345,7 +317,15 @@ class LLMWorker(QThread):
                             
                             # Execute via Skill Manager
                             # Pass step_signal as context to allow tools to log
-                            result = self.skill_manager.call_tool(name, args, context={"step_signal": self.step_signal, "config_manager": self.config_manager})
+                            result = self.skill_manager.call_tool(
+                                name, 
+                                args, 
+                                context={
+                                    "step_signal": self.step_signal, 
+                                    "config_manager": self.config_manager,
+                                    "skill_manager": self.skill_manager
+                                }
+                            )
                             
                             current_messages.append({
                                 "role": "tool",

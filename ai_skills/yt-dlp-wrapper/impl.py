@@ -1,6 +1,7 @@
 import sys
 import subprocess
 import os
+from core.env_utils import get_python_executable
 
 def _ensure_dependency(package_name):
     """
@@ -12,22 +13,7 @@ def _ensure_dependency(package_name):
         print(f"Installing missing dependency: {package_name}...")
         
         # Determine the correct python executable
-        # In PyInstaller frozen environment, sys.executable is the .exe itself, 
-        # which usually cannot run 'pip'. We need to find the underlying python interpreter 
-        # or bundle pip within the exe (complex). 
-        # For this v2.0 simplification, if frozen, we assume standard system python might be available
-        # or we gracefully fail if we can't find a pip-capable python.
-        
-        python_exe = sys.executable
-        if getattr(sys, 'frozen', False):
-            # Try to find a system python fallback
-            # This is a limitation of PyInstaller onefile/onedir without embedded python runtime for pip
-            # A common workaround is to assume 'python' is in PATH
-            import shutil
-            if shutil.which("python"):
-                python_exe = "python"
-            else:
-                 raise RuntimeError("Cannot install dependencies in frozen mode without system Python. Please install 'yt-dlp' manually or ensure 'python' is in your PATH.")
+        python_exe = get_python_executable()
 
         try:
             # On Windows, we want to suppress the new window for the subprocess
