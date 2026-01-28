@@ -20,7 +20,7 @@ from core.env_utils import get_app_data_dir, get_base_dir
 import shutil
 from PySide6.QtGui import QAction, QTextOption, QIcon, QFontMetrics
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget, QToolButton)
+                               QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget, QToolButton, QFileSystemModel, QTreeView, QSplitter)
 from PySide6.QtCore import Qt, QThread, Signal
 
 # Try importing OpenAI
@@ -66,13 +66,7 @@ class SettingsDialog(QDialog):
         self.god_mode_check.setStyleSheet("QCheckBox { color: #d93025; font-weight: bold; }")
         form_layout.addRow("", self.god_mode_check)
         
-        # Plan Mode Toggle
-        self.plan_mode_check = QCheckBox("启用深度规划模式 (Deep Plan Mode)")
-        self.plan_mode_check.setToolTip("开启后，对于复杂任务，Agent 会先生成详细执行计划并请求您的批准，然后再执行。")
-        self.plan_mode_check.setChecked(self.config_manager.get_plan_mode())
-        self.plan_mode_check.setStyleSheet("QCheckBox { color: #1a73e8; font-weight: bold; }")
-        form_layout.addRow("", self.plan_mode_check)
-        
+
         layout.addLayout(form_layout)
 
         # Buttons
@@ -489,28 +483,6 @@ class ChatBubble(QFrame):
             content_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
             content_label.setStyleSheet("color: #000000; font-size: 14px; line-height: 1.5; border: none; background: transparent;")
             bubble_layout.addWidget(content_label)
-            
-            # Toolbar (Copy) - Removed as per user request
-            # toolbar_layout = QHBoxLayout()
-            # toolbar_layout.addStretch()
-            
-            # copy_btn = QPushButton("📄")
-            # copy_btn.setCursor(Qt.PointingHandCursor)
-            # copy_btn.setToolTip("复制内容")
-            # copy_btn.setFixedSize(20, 20)
-            # copy_btn.setStyleSheet("""
-            #     QPushButton { 
-            #         color: #999; 
-            #         border: none; 
-            #         background: transparent;
-            #         font-size: 12px;
-            #     } 
-            #     QPushButton:hover { color: #333; }
-            # """)
-            # copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(text))
-            
-            # toolbar_layout.addWidget(copy_btn)
-            # bubble_layout.addLayout(toolbar_layout)
 
             container_layout.addWidget(bubble_frame)
             
@@ -1034,6 +1006,50 @@ class MainWindow(QMainWindow):
 
         main_container = QWidget()
         root_layout.addWidget(main_container, 1)
+
+        # Right Sidebar (Workspace File Tree)
+        self.right_sidebar = QWidget()
+        self.right_sidebar.setFixedWidth(280)
+        self.right_sidebar.setStyleSheet("background-color: #ffffff; border-left: 1px solid #e0e0e0;")
+        self.right_sidebar.setVisible(False) # Default hidden until workspace selected
+        
+        right_layout = QVBoxLayout(self.right_sidebar)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
+        
+        # Header
+        r_header = QLabel("  工作区文件")
+        r_header.setStyleSheet("font-weight: bold; color: #5f6368; padding: 10px; background-color: #f8f9fa; border-bottom: 1px solid #e0e0e0;")
+        right_layout.addWidget(r_header)
+        
+        # Tree View
+        self.file_model = QFileSystemModel()
+        self.file_model.setRootPath("") 
+        
+        self.file_tree = QTreeView()
+        self.file_tree.setModel(self.file_model)
+        self.file_tree.setRootIndex(self.file_model.index(""))
+        self.file_tree.setHeaderHidden(True)
+        self.file_tree.setColumnHidden(1, True)
+        self.file_tree.setColumnHidden(2, True)
+        self.file_tree.setColumnHidden(3, True)
+        self.file_tree.setStyleSheet("QTreeView { border: none; } QTreeView::item { padding: 4px; }")
+        self.file_tree.clicked.connect(self.on_file_clicked)
+        right_layout.addWidget(self.file_tree, 2)
+        
+        # Preview Area
+        r_preview_header = QLabel("  内容预览")
+        r_preview_header.setStyleSheet("font-weight: bold; color: #5f6368; padding: 5px 10px; background-color: #f8f9fa; border-top: 1px solid #e0e0e0; border-bottom: 1px solid #e0e0e0;")
+        right_layout.addWidget(r_preview_header)
+        
+        self.preview_text = QTextEdit()
+        self.preview_text.setReadOnly(True)
+        self.preview_text.setStyleSheet("border: none; padding: 5px;")
+        self.preview_text.setPlaceholderText("点击文件预览内容...")
+        right_layout.addWidget(self.preview_text, 1)
+        
+        root_layout.addWidget(self.right_sidebar)
+
         layout = QVBoxLayout(main_container)
         layout.setContentsMargins(32, 32, 32, 32)
         layout.setSpacing(16)
@@ -1191,86 +1207,44 @@ class MainWindow(QMainWindow):
         self.input_field.setDisabled(True)
         self.send_btn.setDisabled(True)
 
-        # Get Plan Mode setting
-        plan_mode = self.config_manager.get_plan_mode()
-        
-        if plan_mode:
-            self.status_label.setText("Planning Phase: Generating Strategy...")
-            self.add_chat_bubble('System', "🔎 Deep Plan Mode: Analyzing context and generating execution plan...")
-            
-            # Use specialized PlanGeneratorWorker
-            from core.agent import PlanGeneratorWorker
-            self.plan_worker = PlanGeneratorWorker(self.messages, self.config_manager, workspace_dir=os.getcwd())
-            self.plan_worker.step_signal.connect(self.handle_step_output)
-            self.plan_worker.thinking_signal.connect(self.handle_thinking_output)
-            self.plan_worker.finished_signal.connect(self.handle_plan_generated)
-            self.plan_worker.start()
-        else:
-            # Standard Instant Mode
-            self.status_label.setText("DeepSeek 正在思考...")
-            self.worker = LLMWorker(self.messages, self.config_manager, workspace_dir=os.getcwd(), plan_mode=False)
-            self.worker.step_signal.connect(self.handle_step_output)
-            self.worker.thinking_signal.connect(self.handle_thinking_output)
-            self.worker.finished_signal.connect(self.handle_llm_finished)
-            self.worker.tool_call_signal.connect(self.handle_tool_call)
-            self.worker.tool_result_signal.connect(self.handle_tool_result)
-            self.worker.start()
-
-    def handle_plan_generated(self, plan_content):
-        """Callback when PlanGeneratorWorker finishes"""
-        self.status_label.setText("Plan Generated. Executing...")
-        
-        # 1. Save Plan to Temp File (as requested by user)
-        plan_file = os.path.join(os.getcwd(), "CURRENT_PLAN.md")
-        try:
-            with open(plan_file, "w", encoding="utf-8") as f:
-                f.write(plan_content)
-        except Exception as e:
-            self.add_chat_bubble('System', f"❌ Failed to save plan file: {e}")
-            self.input_field.setDisabled(False)
-            self.send_btn.setDisabled(False)
-            return
-
-        # 2. Show Plan in Chat
-        self.add_chat_bubble('Agent', f"📋 **Execution Plan Generated**\n\n(Saved to `{plan_file}`)\n\n" + plan_content)
-        
-        # 3. Start Executor (Standard LLMWorker) with Plan Context
-        # We inject the plan into the messages for the executor
-        executor_messages = self.messages.copy()
-        executor_messages.append({
-            "role": "system", 
-            "content": f"PRE-GENERATED PLAN LOADED from {plan_file}.\n\nCONTENT:\n{plan_content}\n\nINSTRUCTION: Execute the above plan step-by-step. You do not need to propose a plan again. Just execute."
-        })
-        
-        self.worker = LLMWorker(executor_messages, self.config_manager, workspace_dir=os.getcwd(), plan_mode=False) # Disable plan_mode flag since we already planned
+        # Standard Instant Mode
+        self.status_label.setText("DeepSeek 正在思考...")
+        self.worker = LLMWorker(self.messages, self.config_manager, workspace_dir=os.getcwd())
         self.worker.step_signal.connect(self.handle_step_output)
         self.worker.thinking_signal.connect(self.handle_thinking_output)
-        self.worker.finished_signal.connect(lambda res: self.handle_executor_finished(res, plan_file))
+        self.worker.finished_signal.connect(self.handle_llm_finished)
         self.worker.tool_call_signal.connect(self.handle_tool_call)
         self.worker.tool_result_signal.connect(self.handle_tool_result)
         self.worker.start()
 
-    def handle_executor_finished(self, result, plan_file):
-        """Callback when Executor finishes"""
-        # Cleanup Plan File
-        if os.path.exists(plan_file):
-            try:
-                os.remove(plan_file)
-                self.append_log(f"System: Cleaned up temporary plan file: {plan_file}")
-            except Exception as e:
-                self.append_log(f"System: Warning - Failed to delete plan file: {e}")
-        
-        # Call standard finished handler
-        self.handle_llm_finished(result)
+
 
     def handle_confirmation_request(self, message):
         dialog = QDialog(self)
         dialog.setWindowTitle("请再次确认")
+        dialog.resize(500, 400) # Set a default size
         layout = QVBoxLayout(dialog)
+
+        # ScrollArea for potentially long message
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.NoFrame)
+        
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        
         label = QLabel(message)
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(label)
+        # Style the label for better readability
+        label.setStyleSheet("font-size: 14px; line-height: 1.4;")
+        
+        content_layout.addWidget(label)
+        content_layout.addStretch() # Push text to top
+        
+        scroll_area.setWidget(content_widget)
+        layout.addWidget(scroll_area)
+
         hint_label = QLabel("如果不确定，可以先在下方输入问题问问 AI：")
         hint_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(hint_label)
@@ -1471,6 +1445,12 @@ class MainWindow(QMainWindow):
         self.ws_label.setStyleSheet("color: green; font-weight: bold;")
         self.append_log(f"System: 工作区已切换至 {directory}")
         self.update_recent_workspaces(directory)
+        
+        # Update Right Sidebar
+        if hasattr(self, 'file_model'):
+            self.file_model.setRootPath(directory)
+            self.file_tree.setRootIndex(self.file_model.index(directory))
+            self.right_sidebar.setVisible(True)
 
     def update_recent_workspaces(self, path):
         if path in self.recent_workspaces:
@@ -1501,6 +1481,28 @@ class MainWindow(QMainWindow):
     def clear_recent_workspaces(self):
         self.recent_workspaces = []
         self.config_manager.set("recent_workspaces", [])
+
+    def on_file_clicked(self, index):
+        path = self.file_model.filePath(index)
+        if not os.path.isfile(path):
+            return
+            
+        try:
+            # Check file size to avoid freezing
+            size = os.path.getsize(path)
+            if size > 1024 * 1024: # > 1MB
+                self.preview_text.setPlainText(f"文件过大 ({size/1024/1024:.2f} MB)，不支持预览。")
+                return
+                
+            # Try reading as text
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                self.preview_text.setPlainText(content)
+            except UnicodeDecodeError:
+                self.preview_text.setPlainText("二进制文件或不支持的编码，无法预览。")
+        except Exception as e:
+            self.preview_text.setPlainText(f"读取文件出错: {e}")
 
     def open_settings(self):
         try:
@@ -1694,6 +1696,7 @@ class MainWindow(QMainWindow):
         """启动 LLM 线程获取响应"""
         # self.task_monitor.set_status("thinking")
         self.append_log(f"Agent: 正在深度思考 (DeepSeek CoT)...")
+        self.current_content_buffer = ""
         
         # Insert a temporary "Thinking" bubble
         self.temp_thinking_bubble = ChatBubble("agent", "", thinking="...")
@@ -1702,6 +1705,7 @@ class MainWindow(QMainWindow):
 
         self.llm_worker = LLMWorker(self.messages, self.config_manager, self.workspace_dir)
         self.llm_worker.finished_signal.connect(self.handle_llm_response)
+        self.llm_worker.content_signal.connect(self.handle_content_signal)
         self.llm_worker.step_signal.connect(self.append_log) # Use the unified handler
         self.llm_worker.thinking_signal.connect(self.handle_thinking_signal) # Real-time thinking
         self.llm_worker.skill_used_signal.connect(self.handle_skill_used)
@@ -1715,6 +1719,14 @@ class MainWindow(QMainWindow):
         self.stop_btn.setVisible(True)
         self.stop_btn.setEnabled(True)
         self.loop_hint.setVisible(True)
+
+    def handle_content_signal(self, text):
+        """实时更新最终回复"""
+        self.current_content_buffer += text
+        if hasattr(self, 'temp_thinking_bubble') and self.temp_thinking_bubble:
+            self.temp_thinking_bubble.set_main_content(self.current_content_buffer)
+        elif hasattr(self, 'last_agent_bubble') and self.last_agent_bubble:
+            self.last_agent_bubble.set_main_content(self.current_content_buffer)
 
     def handle_thinking_signal(self, text):
         """实时更新思考过程"""

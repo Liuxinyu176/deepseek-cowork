@@ -175,119 +175,20 @@ def input(prompt=""):
                     pass
             self.finished_signal.emit()
 
-class PlanGeneratorWorker(QThread):
+def clear_reasoning_content(messages):
     """
-    专门用于 Deep Plan Mode 的规划线程。
-    任务：分析用户请求 -> 生成 Markdown 格式的详细计划 -> 返回计划内容。
-    注意：不执行任何写操作或代码运行。
+    Helper to clear reasoning content from messages list to prevent repetition.
+    Returns a new list of cleaned messages (shallow copy of dicts with keys removed).
     """
-    finished_signal = Signal(str)
-    step_signal = Signal(str)
-    thinking_signal = Signal(str)
-
-    def __init__(self, messages, config_manager, workspace_dir=None):
-        super().__init__()
-        self.messages = messages
-        self.config_manager = config_manager
-        self.api_key = config_manager.get("api_key")
-        self.workspace_dir = workspace_dir
-        
-        # Skill Manager (Read-only tools preferred, but for simplicity we load all and restrict usage in Prompt)
-        # Actually, for planning, we might need 'list_files', 'read_file' to know context.
-        self.skill_manager = SkillManager(workspace_dir, config_manager)
-        self.tools = self.skill_manager.get_tool_definitions()
-        
-    def run(self):
-        self.step_signal.emit("Planning: Analyzing request and environment...")
-        
-        # Construct System Context for Planner
-        context_lines = [
-            f"Current Workspace: {self.workspace_dir}",
-            f"Operating System: {platform.system()} {platform.release()}",
-            f"Current Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "ROLE: You are an expert Technical Planner.",
-            "TASK: Analyze the user's request and the current workspace state. Generate a detailed, step-by-step execution plan.",
-            "OUTPUT FORMAT: Pure Markdown. Structure it with '## Goal', '## Analysis', '## Execution Plan' (numbered steps).",
-            "CONSTRAINT 1: You are in READ-ONLY mode. You can use tools like `list_files` or `read_file` to gather context, but DO NOT propose any code execution or file modification yet.",
-            "CONSTRAINT 2: Do not ask for user confirmation. Just output the best possible plan based on your analysis.",
-            "CONSTRAINT 3: Your output MUST be the content of the plan itself. DO NOT output code blocks to write files.",
-            "IMPORTANT: If the user request is simple, you MUST still generate a plan."
-        ]
-        
-        system_prompt = "\n".join(context_lines)
-        current_messages = self.messages.copy()
-        current_messages.insert(0, {"role": "system", "content": system_prompt})
-        
-        final_plan = ""
-        
-        if self.api_key and OPENAI_AVAILABLE:
-            try:
-                client = OpenAI(api_key=self.api_key, base_url="https://api.deepseek.com")
-                
-                # Single turn for planning
-                # We might need a loop if the planner wants to call read tools first
-                
-                turn_count = 0
-                while True:
-                    turn_count += 1
-                    if turn_count > 5: # Safety break
-                        break
-                        
-                    response = client.chat.completions.create(
-                        model="deepseek-reasoner",
-                        messages=current_messages,
-                        tools=self.tools,
-                        stream=False # Simplify for planner
-                    )
-                    
-                    message = response.choices[0].message
-                    
-                    # Handle Thinking (if available in message, though non-stream might hide it or put in reasoning_content)
-                    if hasattr(message, 'reasoning_content') and message.reasoning_content:
-                         self.thinking_signal.emit(message.reasoning_content)
-
-                    if message.tool_calls:
-                        # Execute Read-Only tools
-                        current_messages.append(message)
-                        
-                        for tool_call in message.tool_calls:
-                            func_name = tool_call.function.name
-                            args = json.loads(tool_call.function.arguments)
-                            
-                            # Security Filter for Planner
-                            if func_name not in ['list_files', 'read_file', 'search_codebase', 'glob']:
-                                self.step_signal.emit(f"Planner: Skipping restricted tool {func_name}")
-                                tool_result = "Tool execution skipped: Planner is in Read-Only mode."
-                            else:
-                                self.step_signal.emit(f"Planner: Checking context via {func_name}...")
-                                try:
-                                    func = self.skill_manager.get_tool_function(func_name)
-                                    # Inject workspace_dir if needed
-                                    import inspect
-                                    sig = inspect.signature(func)
-                                    if 'workspace_dir' in sig.parameters:
-                                        args['workspace_dir'] = self.workspace_dir
-                                        
-                                    tool_result = str(func(**args))
-                                except Exception as e:
-                                    tool_result = f"Error: {e}"
-                            
-                            current_messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": tool_result
-                            })
-                    else:
-                        # Final Plan
-                        final_plan = message.content
-                        break
-                        
-            except Exception as e:
-                final_plan = f"Planning Failed: {e}"
-        else:
-            final_plan = "Error: OpenAI/DeepSeek API not initialized."
-
-        self.finished_signal.emit(final_plan)
+    cleaned = []
+    for msg in messages:
+        clean_msg = msg.copy()
+        if 'reasoning_content' in clean_msg:
+            del clean_msg['reasoning_content']
+        if 'reasoning' in clean_msg: # Also clear our internal key
+            del clean_msg['reasoning']
+        cleaned.append(clean_msg)
+    return cleaned
 
 class LLMWorker(QThread):
     """后台调用 LLM API 的线程，支持 Tool Calls 和多轮思考"""
@@ -297,15 +198,15 @@ class LLMWorker(QThread):
     skill_used_signal = Signal(str) # Signal to report active skill usage
     tool_call_signal = Signal(dict)
     tool_result_signal = Signal(dict)
+    content_signal = Signal(str)
 
-    def __init__(self, messages, config_manager, workspace_dir=None, parent_agent_id=None, plan_mode=False):
+    def __init__(self, messages, config_manager, workspace_dir=None, parent_agent_id=None):
         super().__init__()
         self.messages = messages
         self.config_manager = config_manager
         self.api_key = config_manager.get("api_key")
         self.workspace_dir = workspace_dir
         self.parent_agent_id = parent_agent_id
-        self.plan_mode = plan_mode
         
         # Flags for control
         self.is_paused = False
@@ -330,23 +231,29 @@ class LLMWorker(QThread):
 
     def run(self):
         # Work on a copy of messages to handle multi-turn locally
-        current_messages = self.messages.copy()
+        # CRITICAL: Clear previous reasoning content to avoid duplication/confusion in new turn
+        current_messages = clear_reasoning_content(self.messages)
         
         # Construct System Context
         context_lines = [
-            f"Current Workspace: {self.workspace_dir}",
-            f"Operating System: {platform.system()} {platform.release()}",
-            f"Python Version: {sys.version.split()[0]}",
-            f"Current Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            "Note: You are operating within the specified workspace. All file operations should be relative to this path unless explicitly absolute and allowed.",
-            "Capability: You can create new skills/tools using 'create_new_skill'.",
-            "Policy [SKILL CREATION]:",
-            "1. ONLY create new skills for reusable *algorithmic* or *system operation* tasks (e.g., specific file processing, complex calculations, data transformation).",
-            "2. DO NOT create skills for tasks that you can perform naturally as an LLM (e.g., text summarization, translation, creative writing, code explanation). Just output the result directly.",
-            "3. When you encounter a task that requires a new reusable tool, define it as a skill.",
+            f"当前工作区: {self.workspace_dir}",
+            f"操作系统: {platform.system()} {platform.release()}",
+            f"Python 版本: {sys.version.split()[0]}",
+            f"当前日期: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "注意: 你正在指定的工作区内操作。除非明确允许使用绝对路径，否则所有文件操作都应相对于此路径。",
+            "能力: 你可以使用 'create_new_skill' 创建新的技能/工具。",
+            "策略 [技能创建]:",
+            "1. 鼓励创建新技能来封装可复用的任务（例如：特定的文件处理、复杂计算、数据转换、系统操作等）。",
+            "2. 当你发现某个任务可能在未来被再次使用，或者通过代码实现比通过纯文本生成更可靠时，请果断创建技能。",
+            "3. 不要受到过度限制，灵活运用技能来增强你的能力。",
             "",
-            "Policy [INTERACTION]: If you need to ask the user a question or get confirmation (e.g., for deleting files, clarification, or next steps), you MUST use the 'ask_user_confirmation' tool.",
-            "DO NOT ask the question in the text response. The text response is for reasoning and final answers only. Use the tool to trigger a popup dialog."
+            "策略 [交互]: 如果你需要向用户提问或获取确认（例如：删除文件、澄清需求或下一步操作），你必须使用 'ask_user_confirmation' 工具。",
+            "不要在文本回复中直接提问。文本回复仅用于展示推理过程和最终答案。请使用工具来触发弹出对话框。",
+            "",
+            "策略 [思考规范]:",
+            "1. 你的思考过程 (Reasoning) 仅用于分析问题、规划步骤和反思结果。",
+            "2. 严禁将最终给用户的回复（如任务总结、文件列表、结果汇报）放在思考过程中。",
+            "3. 思考过程对用户是折叠的，用户主要阅读的是你的最终 Content 回复。"
         ]
         if self.parent_agent_id:
             context_lines.append(f"Note: You are a sub-agent (ID: {self.parent_agent_id}). Perform your assigned task efficiently.")
@@ -363,6 +270,9 @@ class LLMWorker(QThread):
         
         last_tool_signature = None
         repetition_count = 0
+        
+        last_turn_reasoning = None
+        reasoning_repetition_count = 0
         
         while True:
             # Check Control Flags
@@ -416,6 +326,7 @@ class LLMWorker(QThread):
                         # 2. Handle Content
                         if delta.content:
                             chunk_content += delta.content
+                            self.content_signal.emit(delta.content)
                         
                         # 3. Handle Tool Calls
                         if delta.tool_calls:
@@ -439,6 +350,20 @@ class LLMWorker(QThread):
                     duration = end_time - start_time
                     total_duration += duration
                     
+                    # --- Reasoning Loop Detection ---
+                    if current_turn_reasoning and len(current_turn_reasoning) > 10: # Ignore very short reasonings
+                        if current_turn_reasoning == last_turn_reasoning:
+                            reasoning_repetition_count += 1
+                        else:
+                            reasoning_repetition_count = 0
+                            last_turn_reasoning = current_turn_reasoning
+                            
+                        if reasoning_repetition_count >= 3:
+                            self.step_signal.emit("系统: 🛑 检测到思维死循环 (重复的思考过程)。自动停止。")
+                            final_content = "⚠️ 操作已停止: 检测到思维死循环 (重复的思考过程)。"
+                            break
+                    # --------------------------------
+
                     # Reconstruct final message object from buffers
                     content = chunk_content
                     
@@ -469,8 +394,10 @@ class LLMWorker(QThread):
                         "role": "assistant",
                         "content": content
                     }
-                    if full_reasoning:
-                        assistant_msg["reasoning_content"] = full_reasoning
+                    # CRITICAL: For tool calls WITHIN the same turn, DeepSeek requires reasoning_content
+                    # We must use current_turn_reasoning, NOT full_reasoning, to avoid duplication in history
+                    # Always include the key, even if empty, to satisfy API requirements
+                    assistant_msg["reasoning_content"] = current_turn_reasoning
                         
                     if tool_calls:
                          # For history, we need the dict representation
@@ -500,8 +427,8 @@ class LLMWorker(QThread):
                                 last_tool_signature = current_signature
                                 
                             if repetition_count >= 3: # Same toolset called 4 times in a row
-                                self.step_signal.emit("System: 🛑 Loop detected (repeated tool calls). Stopping automatically.")
-                                final_content = "⚠️ Operation stopped: Infinite loop detected (repeated tool calls)."
+                                self.step_signal.emit("系统: 🛑 检测到循环 (重复的工具调用)。自动停止。")
+                                final_content = "⚠️ 操作已停止: 检测到死循环 (重复的工具调用)。"
                                 break
                         except Exception as e:
                             print(f"Loop detection error: {e}")

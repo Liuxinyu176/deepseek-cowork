@@ -30,17 +30,9 @@ class ConfigManager:
             "api_key": "",
             "base_url": "https://api.deepseek.com",
             "disabled_skills": [],
-            "god_mode": False,
-            "plan_mode": False
+            "god_mode": False
         }
         self.load_config()
-
-    def get_plan_mode(self):
-        return self.config.get("plan_mode", False)
-
-    def set_plan_mode(self, enabled: bool):
-        self.config["plan_mode"] = enabled
-        self.save_config()
 
     def get_god_mode(self):
         return self.config.get("god_mode", False)
