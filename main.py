@@ -1010,7 +1010,8 @@ class MainWindow(QMainWindow):
         # Right Sidebar (Workspace File Tree)
         self.right_sidebar = QWidget()
         self.right_sidebar.setFixedWidth(280)
-        self.right_sidebar.setStyleSheet("background-color: #ffffff; border-left: 1px solid #e0e0e0;")
+        # Fix: Enforce text color for Windows 11 Dark Mode compatibility
+        self.right_sidebar.setStyleSheet("background-color: #ffffff; color: #333333; border-left: 1px solid #e0e0e0;")
         self.right_sidebar.setVisible(False) # Default hidden until workspace selected
         
         right_layout = QVBoxLayout(self.right_sidebar)
@@ -1033,7 +1034,24 @@ class MainWindow(QMainWindow):
         self.file_tree.setColumnHidden(1, True)
         self.file_tree.setColumnHidden(2, True)
         self.file_tree.setColumnHidden(3, True)
-        self.file_tree.setStyleSheet("QTreeView { border: none; } QTreeView::item { padding: 4px; }")
+        # Fix: Enhanced styling for TreeView with better visibility and interaction
+        self.file_tree.setStyleSheet("""
+            QTreeView { 
+                border: none; 
+                background-color: #ffffff; 
+                color: #333333; 
+            } 
+            QTreeView::item { 
+                padding: 4px; 
+            }
+            QTreeView::item:selected {
+                background-color: #e8f0fe;
+                color: #1a73e8;
+            }
+            QTreeView::item:hover {
+                background-color: #f1f3f4;
+            }
+        """)
         self.file_tree.clicked.connect(self.on_file_clicked)
         right_layout.addWidget(self.file_tree, 2)
         
@@ -1044,7 +1062,7 @@ class MainWindow(QMainWindow):
         
         self.preview_text = QTextEdit()
         self.preview_text.setReadOnly(True)
-        self.preview_text.setStyleSheet("border: none; padding: 5px;")
+        self.preview_text.setStyleSheet("border: none; padding: 5px; background-color: #ffffff; color: #333333;")
         self.preview_text.setPlaceholderText("点击文件预览内容...")
         right_layout.addWidget(self.preview_text, 1)
         
@@ -1114,6 +1132,8 @@ class MainWindow(QMainWindow):
 
         self.input_field = QLineEdit()
         self.input_field.setObjectName("MainInput")
+        # Fix: Enforce text color for input field
+        self.input_field.setStyleSheet("border: none; background: transparent; color: #333333; font-size: 14px;")
         self.input_field.setPlaceholderText("例如：把这个文件夹里的图片按日期分类")
         self.input_field.returnPressed.connect(self.handle_send)
 
