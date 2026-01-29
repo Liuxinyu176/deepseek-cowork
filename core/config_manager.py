@@ -30,7 +30,8 @@ class ConfigManager:
             "api_key": "",
             "base_url": "https://api.deepseek.com",
             "disabled_skills": [],
-            "god_mode": False
+            "god_mode": False,
+            "default_workspace": ""
         }
         self.load_config()
 

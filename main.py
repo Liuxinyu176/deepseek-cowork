@@ -18,10 +18,10 @@ from skills.skill_creator.impl import create_new_skill
 from core.interaction import bridge
 from core.env_utils import get_app_data_dir, get_base_dir
 import shutil
-from PySide6.QtGui import QAction, QTextOption, QIcon, QFontMetrics
+from PySide6.QtGui import QAction, QTextOption, QIcon, QFontMetrics, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget, QToolButton, QFileSystemModel, QTreeView, QSplitter)
-from PySide6.QtCore import Qt, QThread, Signal
+                               QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget, QToolButton, QFileSystemModel, QTreeView, QSplitter, QStackedWidget)
+from PySide6.QtCore import Qt, QThread, Signal, QUrl
 
 # Try importing OpenAI
 try:
@@ -58,6 +58,25 @@ class SettingsDialog(QDialog):
         self.base_url_input.setPlaceholderText("https://api.deepseek.com")
         self.base_url_input.setText(self.config_manager.get("base_url", "https://api.deepseek.com"))
         form_layout.addRow("API Base URL (可选):", self.base_url_input)
+
+        self.default_ws_input = QLineEdit()
+        self.default_ws_input.setPlaceholderText("未设置")
+        self.default_ws_input.setText(self.config_manager.get("default_workspace", ""))
+        default_ws_container = QWidget()
+        default_ws_layout = QHBoxLayout(default_ws_container)
+        default_ws_layout.setContentsMargins(0, 0, 0, 0)
+        default_ws_layout.addWidget(self.default_ws_input, 1)
+        default_ws_btn = QPushButton("选择")
+        default_ws_btn.setFixedWidth(60)
+        default_ws_layout.addWidget(default_ws_btn)
+        form_layout.addRow("默认工作区:", default_ws_container)
+
+        def choose_default_workspace():
+            directory = QFileDialog.getExistingDirectory(self, "选择默认工作区")
+            if directory:
+                self.default_ws_input.setText(directory)
+
+        default_ws_btn.clicked.connect(choose_default_workspace)
         
         # God Mode Toggle
         self.god_mode_check = QCheckBox("启用 God Mode (解除安全限制)")
@@ -87,10 +106,15 @@ class SettingsDialog(QDialog):
         if not base_url:
             base_url = "https://api.deepseek.com"
         self.config_manager.set("base_url", base_url)
+        self.config_manager.set("default_workspace", self.default_ws_input.text().strip())
         # Save God Mode
         self.config_manager.set_god_mode(self.god_mode_check.isChecked())
-        # Save Plan Mode
-        self.config_manager.set_plan_mode(self.plan_mode_check.isChecked())
+        parent = self.parent()
+        if parent and hasattr(parent, "add_system_toast"):
+            if self.api_key_input.text().strip():
+                parent.add_system_toast("API Key 保存成功", "success")
+            else:
+                parent.add_system_toast("设置已保存", "success")
         
         self.accept()
 
@@ -1053,6 +1077,8 @@ class MainWindow(QMainWindow):
             }
         """)
         self.file_tree.clicked.connect(self.on_file_clicked)
+        self.file_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.file_tree.customContextMenuRequested.connect(self.show_file_context_menu)
         right_layout.addWidget(self.file_tree, 2)
         
         # Preview Area
@@ -1060,11 +1086,19 @@ class MainWindow(QMainWindow):
         r_preview_header.setStyleSheet("font-weight: bold; color: #5f6368; padding: 5px 10px; background-color: #f8f9fa; border-top: 1px solid #e0e0e0; border-bottom: 1px solid #e0e0e0;")
         right_layout.addWidget(r_preview_header)
         
+        self.preview_stack = QStackedWidget()
         self.preview_text = QTextEdit()
         self.preview_text.setReadOnly(True)
         self.preview_text.setStyleSheet("border: none; padding: 5px; background-color: #ffffff; color: #333333;")
         self.preview_text.setPlaceholderText("点击文件预览内容...")
-        right_layout.addWidget(self.preview_text, 1)
+        self.preview_image = QLabel()
+        self.preview_image.setAlignment(Qt.AlignCenter)
+        self.preview_image.setStyleSheet("background-color: #ffffff;")
+        self.preview_stack.addWidget(self.preview_text)
+        self.preview_stack.addWidget(self.preview_image)
+        self.preview_stack.setCurrentWidget(self.preview_text)
+        self.preview_pixmap = None
+        right_layout.addWidget(self.preview_stack, 1)
         
         root_layout.addWidget(self.right_sidebar)
 
@@ -1207,6 +1241,7 @@ class MainWindow(QMainWindow):
                     print(f"[System] Migration warning: {e}")
                     
         self.refresh_history_list()
+        self.load_default_workspace()
 
     def handle_send(self):
         user_input = self.input_field.text().strip()
@@ -1446,6 +1481,13 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.append_log(f"Error saving history: {e}")
 
+    def load_default_workspace(self):
+        default_dir = self.config_manager.get("default_workspace", "")
+        if default_dir and os.path.isdir(default_dir):
+            self.load_workspace(default_dir)
+        elif default_dir:
+            self.append_log(f"System: 默认工作区无效或不存在: {default_dir}")
+
     def select_workspace(self):
         directory = QFileDialog.getExistingDirectory(self, "选择工作区")
         if directory:
@@ -1502,27 +1544,129 @@ class MainWindow(QMainWindow):
         self.recent_workspaces = []
         self.config_manager.set("recent_workspaces", [])
 
+    def show_file_context_menu(self, position):
+        index = self.file_tree.indexAt(position)
+        if not index.isValid():
+            return
+        path = self.file_model.filePath(index)
+        if not os.path.exists(path):
+            return
+        menu = QMenu(self)
+        open_action = QAction("打开", self)
+        reveal_action = QAction("在资源管理器中显示", self)
+        copy_path_action = QAction("复制路径", self)
+        copy_action = QAction("复制到...", self)
+        move_action = QAction("移动到...", self)
+        delete_action = QAction("删除", self)
+
+        open_action.triggered.connect(lambda: self.open_path_in_system(path))
+        reveal_action.triggered.connect(lambda: self.reveal_in_explorer(path))
+        copy_path_action.triggered.connect(lambda: self.copy_path_to_clipboard(path))
+        copy_action.triggered.connect(lambda: self.copy_path_to_dir(path))
+        move_action.triggered.connect(lambda: self.move_path_to_dir(path))
+        delete_action.triggered.connect(lambda: self.delete_path(path))
+
+        menu.addAction(open_action)
+        menu.addAction(reveal_action)
+        menu.addSeparator()
+        menu.addAction(copy_path_action)
+        menu.addAction(copy_action)
+        menu.addAction(move_action)
+        menu.addSeparator()
+        menu.addAction(delete_action)
+        menu.exec(self.file_tree.viewport().mapToGlobal(position))
+
+    def open_path_in_system(self, path):
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def reveal_in_explorer(self, path):
+        if platform.system() == "Windows":
+            subprocess.Popen(["explorer", "/select,", path])
+        else:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
+
+    def copy_path_to_clipboard(self, path):
+        QApplication.clipboard().setText(path)
+        self.add_system_toast("路径已复制", "success")
+
+    def copy_path_to_dir(self, path):
+        dest_dir = QFileDialog.getExistingDirectory(self, "选择复制到的目录")
+        if not dest_dir:
+            return
+        try:
+            if os.path.isdir(path):
+                dest_path = os.path.join(dest_dir, os.path.basename(path))
+                if os.path.exists(dest_path):
+                    QMessageBox.warning(self, "提示", "目标已存在同名文件夹。")
+                    return
+                shutil.copytree(path, dest_path)
+            else:
+                shutil.copy2(path, dest_dir)
+            self.add_system_toast("复制完成", "success")
+        except Exception as e:
+            QMessageBox.warning(self, "失败", f"复制失败: {e}")
+
+    def move_path_to_dir(self, path):
+        dest_dir = QFileDialog.getExistingDirectory(self, "选择移动到的目录")
+        if not dest_dir:
+            return
+        try:
+            shutil.move(path, dest_dir)
+            self.add_system_toast("移动完成", "success")
+        except Exception as e:
+            QMessageBox.warning(self, "失败", f"移动失败: {e}")
+
+    def delete_path(self, path):
+        confirm = QMessageBox.question(self, "确认删除", f"确定要删除该项目吗？\n{path}")
+        if confirm != QMessageBox.Yes:
+            return
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            self.add_system_toast("删除完成", "success")
+        except Exception as e:
+            QMessageBox.warning(self, "失败", f"删除失败: {e}")
+
     def on_file_clicked(self, index):
         path = self.file_model.filePath(index)
         if not os.path.isfile(path):
             return
-            
+        ext = os.path.splitext(path)[1].lower()
+        image_exts = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
         try:
-            # Check file size to avoid freezing
             size = os.path.getsize(path)
-            if size > 1024 * 1024: # > 1MB
-                self.preview_text.setPlainText(f"文件过大 ({size/1024/1024:.2f} MB)，不支持预览。")
+            if ext in image_exts:
+                if size > 10 * 1024 * 1024:
+                    self.preview_text.setPlainText(f"文件过大 ({size/1024/1024:.2f} MB)，不支持预览。")
+                    self.preview_stack.setCurrentWidget(self.preview_text)
+                    return
+                pixmap = QPixmap(path)
+                if pixmap.isNull():
+                    self.preview_text.setPlainText("图片无法预览。")
+                    self.preview_stack.setCurrentWidget(self.preview_text)
+                    return
+                self.preview_pixmap = pixmap
+                scaled = pixmap.scaled(self.preview_stack.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.preview_image.setPixmap(scaled)
+                self.preview_stack.setCurrentWidget(self.preview_image)
                 return
-                
-            # Try reading as text
+            if size > 1024 * 1024:
+                self.preview_text.setPlainText(f"文件过大 ({size/1024/1024:.2f} MB)，不支持预览。")
+                self.preview_stack.setCurrentWidget(self.preview_text)
+                return
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 self.preview_text.setPlainText(content)
+                self.preview_stack.setCurrentWidget(self.preview_text)
             except UnicodeDecodeError:
                 self.preview_text.setPlainText("二进制文件或不支持的编码，无法预览。")
+                self.preview_stack.setCurrentWidget(self.preview_text)
         except Exception as e:
             self.preview_text.setPlainText(f"读取文件出错: {e}")
+            self.preview_stack.setCurrentWidget(self.preview_text)
 
     def open_settings(self):
         try:
