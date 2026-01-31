@@ -199,6 +199,7 @@ class LLMWorker(QThread):
     tool_call_signal = Signal(dict)
     tool_result_signal = Signal(dict)
     content_signal = Signal(str)
+    agent_state_signal = Signal(dict) # Signal to report sub-agent status
 
     def __init__(self, messages, config_manager, workspace_dir=None, parent_agent_id=None):
         super().__init__()
@@ -470,7 +471,9 @@ class LLMWorker(QThread):
                                 context={
                                     "step_signal": self.step_signal, 
                                     "config_manager": self.config_manager,
-                                    "skill_manager": self.skill_manager
+                                    "skill_manager": self.skill_manager,
+                                    "agent_state_signal": self.agent_state_signal,
+                                    "tool_call_id": tool.id
                                 }
                             )
                             
@@ -520,4 +523,10 @@ class LLMWorker(QThread):
             "role": "assistant",
             "duration": total_duration,
             "generated_messages": generated_messages
+        })
+
+        self.agent_state_signal.emit({
+            "agent_id": self.parent_agent_id or "Main", 
+            "status": "completed", 
+            "content": final_content
         })

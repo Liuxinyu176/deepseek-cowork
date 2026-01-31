@@ -20,7 +20,9 @@ from core.env_utils import get_app_data_dir, get_base_dir
 from core.theme import apply_theme
 import shutil
 import qtawesome as qta
-from PySide6.QtGui import QAction, QTextOption, QIcon, QFontMetrics, QPixmap, QDesktopServices, QGuiApplication, QColor, QPainter, QBrush, QPainterPath
+from PySide6.QtGui import (QAction, QTextOption, QIcon, QFont, QFontMetrics, QPixmap, 
+                          QDesktopServices, QGuiApplication, QColor, QPainter, 
+                          QBrush, QPainterPath, QTextCursor, QTextCharFormat)
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget, QToolButton, QFileSystemModel, QTreeView, QSplitter, QStackedWidget, QSizePolicy)
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize, QRect, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
@@ -1142,6 +1144,77 @@ class ToolCallCard(QFrame):
         
         layout.addWidget(self.main_row)
 
+        # 4. Sub-agents Container (Hidden by default)
+        self.sub_agents_container = QWidget()
+        self.sub_agents_layout = QVBoxLayout(self.sub_agents_container)
+        self.sub_agents_layout.setContentsMargins(32, 4, 4, 4) # Indent
+        self.sub_agents_layout.setSpacing(4)
+        self.sub_agents_container.setVisible(False)
+        layout.addWidget(self.sub_agents_container)
+        
+        self.sub_agent_widgets = {}
+
+    def update_agent_state(self, state):
+        agent_id = state.get("agent_id")
+        status = state.get("status")
+        task = state.get("task", "")
+        
+        if not agent_id: return
+        
+        if not self.sub_agents_container.isVisible():
+            self.sub_agents_container.setVisible(True)
+            
+        if agent_id not in self.sub_agent_widgets:
+            # Create new row for agent
+            row_widget = QWidget()
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            
+            icon = QLabel()
+            icon.setPixmap(qta.icon('fa5s.robot', color='#6b7280').pixmap(12, 12))
+            
+            name = QLabel(agent_id)
+            name.setStyleSheet("font-weight: bold; color: #4b5563; font-size: 11px;")
+            
+            status_label = QLabel(status)
+            status_label.setStyleSheet("color: #6b7280; font-size: 11px;")
+            
+            row_layout.addWidget(icon)
+            row_layout.addWidget(name)
+            row_layout.addWidget(status_label, 1) # Expand
+            
+            self.sub_agents_layout.addWidget(row_widget)
+            self.sub_agent_widgets[agent_id] = {
+                "widget": row_widget,
+                "status_label": status_label
+            }
+        
+        # Update status
+        widgets = self.sub_agent_widgets[agent_id]
+        status_text = f"{status}"
+        
+        # Default style
+        style = "color: #6b7280; font-size: 11px;"
+        
+        if status == "pending":
+            status_text = f"Pending: {task[:30]}..." if task else "Pending"
+        elif status == "completed":
+            status_text = "Completed"
+            style = "color: #10b981; font-size: 11px; font-weight: bold;"
+        elif status == "active":
+             status_text = "Running..."
+             style = "color: #3b82f6; font-size: 11px;"
+        elif status == "thinking":
+            status_text = "Thinking..." 
+            style = "color: #6366f1; font-size: 11px; font-style: italic;"
+        elif status == "tool_use":
+            # task contains "Tool: <name>"
+            status_text = f"Action: {task}"
+            style = "color: #f59e0b; font-size: 11px; font-weight: bold;"
+        
+        widgets["status_label"].setText(status_text)
+        widgets["status_label"].setStyleSheet(style)
+
     def on_card_clicked(self, event):
         self.clicked.emit(self.tool_id, str(self.args), str(self.result))
 
@@ -1173,6 +1246,168 @@ class ToolCallCard(QFrame):
     def set_result(self, result_text):
         self.status_icon.setPixmap(qta.icon('fa5s.check-circle', color='#10b981').pixmap(14, 14))
         self.result = result_text
+
+class SubAgentMonitor(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane { border: none; }
+            QTabBar::tab {
+                background: #f3f4f6;
+                color: #6b7280;
+                padding: 6px 12px;
+                margin-right: 2px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                font-size: 11px;
+            }
+            QTabBar::tab:selected {
+                background: #ffffff;
+                color: #3b82f6;
+                font-weight: bold;
+            }
+        """)
+        layout.addWidget(self.tabs)
+        
+        self.agents = {} # {agent_id: {"text_edit": QTextEdit}}
+
+    def update_log(self, agent_id, content, status):
+        if agent_id not in self.agents:
+            self._create_agent_tab(agent_id)
+            
+        widgets = self.agents[agent_id]
+        text_edit = widgets["text_edit"]
+        
+        # Timestamp
+        from datetime import datetime
+        ts = datetime.now().strftime("%H:%M:%S")
+        
+        # Determine format
+        if status == "pending":
+            # New task started, clear previous log
+            text_edit.clear()
+            
+            cursor = text_edit.textCursor()
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor("#111827"))
+            fmt.setFontWeight(QFont.Bold)
+            fmt.setFontPointSize(12)
+            cursor.insertText(f"🚀 Task Started at {ts}\n{content}\n\n", fmt)
+            text_edit.setTextCursor(cursor)
+            
+            # Update Tab Icon/Text
+            self._update_tab_status(agent_id, "running")
+            
+        elif status == "thinking" and content:
+            cursor = text_edit.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor("#6366f1"))
+            fmt.setFontItalic(True)
+            fmt.setFontWeight(QFont.Normal)
+            fmt.setFontPointSize(11)
+            
+            cursor.insertText(content, fmt)
+            text_edit.setTextCursor(cursor)
+            text_edit.ensureCursorVisible()
+            
+            self._update_tab_status(agent_id, "thinking")
+            
+        elif status == "log" and content:
+            cursor = text_edit.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            if not text_edit.toPlainText().endswith("\n") and len(text_edit.toPlainText()) > 0:
+                cursor.insertText("\n")
+                
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor("#6b7280"))
+            fmt.setFontItalic(False)
+            fmt.setFontWeight(QFont.Normal)
+            fmt.setFontPointSize(10)
+            
+            cursor.insertText(f"[{ts}] {content}\n", fmt)
+            text_edit.setTextCursor(cursor)
+            text_edit.ensureCursorVisible()
+            
+        elif status == "tool_use" and content:
+            cursor = text_edit.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            if not text_edit.toPlainText().endswith("\n") and len(text_edit.toPlainText()) > 0:
+                cursor.insertText("\n")
+                
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor("#d97706")) # Amber
+            fmt.setFontWeight(QFont.Bold)
+            fmt.setFontItalic(False)
+            fmt.setFontPointSize(11)
+            
+            cursor.insertText(f"\n[{ts}] 🛠️ Action: {content}\n", fmt)
+            text_edit.setTextCursor(cursor)
+            text_edit.ensureCursorVisible()
+            
+            self._update_tab_status(agent_id, "tool")
+            
+        elif status == "completed":
+             cursor = text_edit.textCursor()
+             cursor.movePosition(QTextCursor.End)
+             if not text_edit.toPlainText().endswith("\n") and len(text_edit.toPlainText()) > 0:
+                cursor.insertText("\n")
+                
+             fmt = QTextCharFormat()
+             fmt.setForeground(QColor("#10b981")) # Green
+             fmt.setFontWeight(QFont.Bold)
+             fmt.setFontItalic(False)
+             fmt.setFontPointSize(12)
+             
+             cursor.insertText(f"\n✅ Completed at {ts}.\n", fmt)
+             text_edit.setTextCursor(cursor)
+             text_edit.ensureCursorVisible()
+             
+             self._update_tab_status(agent_id, "completed")
+
+    def _update_tab_status(self, agent_id, state):
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i).startswith(agent_id):
+                icon = None
+                if state == "running":
+                    icon = qta.icon('fa5s.play-circle', color='#3b82f6')
+                elif state == "thinking":
+                    icon = qta.icon('fa5s.brain', color='#8b5cf6')
+                elif state == "tool":
+                    icon = qta.icon('fa5s.tools', color='#f59e0b')
+                elif state == "completed":
+                    icon = qta.icon('fa5s.check-circle', color='#10b981')
+                
+                if icon:
+                    self.tabs.setTabIcon(i, icon)
+                break
+
+    def _create_agent_tab(self, agent_id):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setStyleSheet("""
+            border: none;
+            padding: 8px;
+            background: #ffffff;
+            font-family: 'Consolas', monospace;
+            font-size: 11px;
+            line-height: 1.5;
+        """)
+        layout.addWidget(text_edit)
+        
+        index = self.tabs.addTab(tab, agent_id)
+        self.agents[agent_id] = {"text_edit": text_edit}
+        if self.tabs.count() == 1:
+            self.tabs.setCurrentIndex(index)
 
 class SessionState:
     def __init__(self, session_id, chat_layout, active_skills_label, session_widget, chat_scroll):
@@ -1526,6 +1761,10 @@ class MainWindow(QMainWindow):
         td_layout.addWidget(self.td_result_edit, 2)
         
         self.right_tabs.addTab(self.tool_details_tab, "工具详情")
+        
+        # Tab 3: Sub-Agent Monitor
+        self.sub_agent_monitor = SubAgentMonitor()
+        self.right_tabs.addTab(self.sub_agent_monitor, "分身监控")
         
         right_layout.addWidget(self.right_tabs)
         
@@ -2338,10 +2577,46 @@ class MainWindow(QMainWindow):
         state.llm_worker.skill_used_signal.connect(lambda name, sid=session_id: self.handle_skill_used(name, sid))
         state.llm_worker.tool_call_signal.connect(lambda data, sid=session_id: self.add_tool_card(data, sid))
         state.llm_worker.tool_result_signal.connect(lambda data, sid=session_id: self.update_tool_card(data, sid))
+        state.llm_worker.agent_state_signal.connect(lambda data, sid=session_id: self.handle_agent_state(data, sid))
         state.llm_worker.start()
         
         if state.session_id == self.current_session_id:
              self.normalize_session_ui(state)
+
+    def handle_agent_state(self, data, session_id=None):
+        state = self.get_session(session_id)
+        if not state: return
+        
+        # Update Tool Card
+        tool_call_id = data.get("tool_call_id")
+        if tool_call_id and tool_call_id in state.tool_cards:
+            card = state.tool_cards[tool_call_id]
+            card.update_agent_state(data)
+
+        # Update Sub-Agent Monitor
+        if session_id == self.current_session_id:
+            agent_id = data.get("agent_id")
+            status = data.get("status")
+            
+            if agent_id:
+                content = None
+                if status == "thinking":
+                    content = data.get("reasoning_delta")
+                elif status == "log":
+                    content = data.get("log_content")
+                elif status == "tool_use":
+                    content = data.get("task")
+                elif status == "pending":
+                    content = f"Task: {data.get('task')}"
+                elif status == "completed":
+                    content = "Done"
+                    
+                if content or status in ["completed", "pending"]:
+                    self.sub_agent_monitor.update_log(agent_id, content, status)
+
+                # Auto switch to monitor tab if active/thinking/pending
+                if status in ["active", "thinking", "pending", "tool_use"] and self.right_tabs.currentWidget() != self.sub_agent_monitor:
+                    self.right_tabs.setCurrentWidget(self.sub_agent_monitor)
 
     def handle_content_signal(self, text, session_id=None):
         state = self.get_session(session_id)

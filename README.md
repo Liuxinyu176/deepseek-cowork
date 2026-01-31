@@ -24,7 +24,9 @@ Unlike traditional chatbots, this assistant utilizes the **DeepSeek-V3.2** model
     *   **Workspace Sandbox**: Operations are strictly confined to the user-selected directory.
     *   **Environment Isolation**: Built-in `env_utils` ensures Python scripts and `pip` commands run correctly in both dev and frozen (EXE) environments.
     *   **Network Resilience**: Smart retry mechanisms for network-sensitive operations like Git cloning.
-*   **🤖 Multi-Agent Dispatch**: Capable of spawning sub-agents (`agent-manager`) to handle parallel tasks independently.
+*   **🤖 Multi-Agent Collaboration**: 
+    *   **Parallel Dispatch**: Spawns sub-agents (`agent-manager`) to handle complex tasks concurrently.
+    *   **Real-time Monitor**: Dedicated UI tab to visualize the "Thinking" process and actions of each sub-agent in real-time.
 *   **💾 Auto-Save History**: Chat sessions are automatically saved and restored, allowing seamless continuation of tasks.
 *   **⏯️ Real-time Control**: Supports pausing/resuming tasks at any time, and forcibly stopping execution if stuck in a loop.
 *   **🖥️ Modern UI**: Built with **PySide6** (Qt for Python), offering a responsive and native desktop experience.
