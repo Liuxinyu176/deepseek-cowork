@@ -863,6 +863,10 @@ class ChatBubble(QFrame):
             self.think_container.setVisible(True)
             self.think_container.setMaximumHeight(0) # Start from 0
             
+            # Disconnect previous connections to avoid conflict (e.g. setVisible(False) from closing)
+            try: self.think_animation.finished.disconnect() 
+            except: pass
+            
             # We need to force layout to calculate size
             self.think_container.adjustSize() 
             # This might be tricky with dynamic content. 
@@ -873,7 +877,7 @@ class ChatBubble(QFrame):
             # 1. Get total height of content
             total_height = self.think_container_layout.sizeHint().height()
             # If sizeHint is small (hidden), try measure content
-            if total_height < 50: total_height = 1000 # Fallback
+            if total_height < 50: total_height = 800 # Fallback
             
             self.think_animation.setStartValue(0)
             self.think_animation.setEndValue(total_height)
@@ -1409,6 +1413,19 @@ class SubAgentMonitor(QWidget):
         if self.tabs.count() == 1:
             self.tabs.setCurrentIndex(index)
 
+class SubAgentMonitorWindow(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("DeepSeek Cowork - AI 分身监控")
+        self.resize(600, 400)
+        self.setWindowFlags(self.windowFlags() | Qt.Window) # Ensure it acts like a window
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.monitor = SubAgentMonitor()
+        layout.addWidget(self.monitor)
+
 class SessionState:
     def __init__(self, session_id, chat_layout, active_skills_label, session_widget, chat_scroll):
         self.session_id = session_id
@@ -1762,9 +1779,8 @@ class MainWindow(QMainWindow):
         
         self.right_tabs.addTab(self.tool_details_tab, "工具详情")
         
-        # Tab 3: Sub-Agent Monitor
-        self.sub_agent_monitor = SubAgentMonitor()
-        self.right_tabs.addTab(self.sub_agent_monitor, "分身监控")
+        # Sub-Agent Monitor (Now as independent window, initialized later)
+        self.sub_agent_monitor_window = None
         
         right_layout.addWidget(self.right_tabs)
         
@@ -2612,11 +2628,20 @@ class MainWindow(QMainWindow):
                     content = "Done"
                     
                 if content or status in ["completed", "pending"]:
-                    self.sub_agent_monitor.update_log(agent_id, content, status)
+                    # Lazy init monitor window
+                    if not self.sub_agent_monitor_window:
+                        self.sub_agent_monitor_window = SubAgentMonitorWindow(self)
+                    
+                    self.sub_agent_monitor_window.monitor.update_log(agent_id, content, status)
 
-                # Auto switch to monitor tab if active/thinking/pending
-                if status in ["active", "thinking", "pending", "tool_use"] and self.right_tabs.currentWidget() != self.sub_agent_monitor:
-                    self.right_tabs.setCurrentWidget(self.sub_agent_monitor)
+                # Auto show monitor window if active/thinking/pending
+                if status in ["active", "thinking", "pending", "tool_use"]:
+                     if not self.sub_agent_monitor_window:
+                        self.sub_agent_monitor_window = SubAgentMonitorWindow(self)
+                     
+                     if not self.sub_agent_monitor_window.isVisible():
+                         self.sub_agent_monitor_window.show()
+                         self.sub_agent_monitor_window.raise_()
 
     def handle_content_signal(self, text, session_id=None):
         state = self.get_session(session_id)
