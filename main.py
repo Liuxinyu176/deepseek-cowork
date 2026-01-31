@@ -19,10 +19,11 @@ from core.interaction import bridge
 from core.env_utils import get_app_data_dir, get_base_dir
 from core.theme import apply_theme
 import shutil
+import qtawesome as qta
 from PySide6.QtGui import QAction, QTextOption, QIcon, QFontMetrics, QPixmap, QDesktopServices, QGuiApplication, QColor, QPainter, QBrush, QPainterPath
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget, QToolButton, QFileSystemModel, QTreeView, QSplitter, QStackedWidget, QSizePolicy)
-from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize, QRect
+from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize, QRect, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
 
 # Try importing OpenAI
 try:
@@ -37,36 +38,71 @@ try:
 except ImportError:
     QDARKTHEME_AVAILABLE = False
 
+# Global Menu Stylesheet to ensure consistency and force light theme
+MENU_STYLESHEET = """
+QMenu {
+    background-color: #ffffff;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    padding: 4px;
+}
+QMenu::item {
+    padding: 6px 24px 6px 12px;
+    border-radius: 4px;
+    color: #24292f;
+    background-color: transparent;
+}
+QMenu::item:selected {
+    background-color: #0969da;
+    color: #ffffff;
+}
+QMenu::separator {
+    height: 1px;
+    background: #d0d7de;
+    margin: 4px 0;
+}
+"""
+
 # --- Helper Classes for UI ---
 
 class Avatar(QLabel):
-    def __init__(self, role, size=32, parent=None):
+    def __init__(self, role, size=36, parent=None): # 稍微加大一点尺寸到 36
         super().__init__(parent)
         self.setFixedSize(size, size)
         self.role = role
+        self.setAttribute(Qt.WA_TranslucentBackground) # 关键：设置背景透明，消除锯齿黑边
         self.setText("")
         
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        path = QPainterPath()
-        path.addEllipse(0, 0, self.width(), self.height())
-        painter.setClipPath(path)
+        # 预先生成图标，提升性能并确保尺寸一致
+        # icon_size 设置为控件大小的 60%，视觉上更平衡
+        icon_size = int(size * 0.6)
         
         if self.role == "User":
-            color = QColor("#4b5563") # Dark Grey for User
-            painter.fillRect(self.rect(), color)
-            painter.setPen(Qt.white)
-            painter.setFont(self.font())
-            painter.drawText(self.rect(), Qt.AlignCenter, "Me")
+            self.bg_color = QColor("#4b5563") # 用户灰
+            # 使用 user-alt 通常比 user 好看一点
+            self.pixmap = qta.icon('fa5s.user', color='white').pixmap(icon_size, icon_size)
         else:
-            # DeepSeek Blue
-            color = QColor("#4d6bfe") 
-            painter.fillRect(self.rect(), color)
-            painter.setPen(Qt.white)
-            painter.setFont(self.font())
-            painter.drawText(self.rect(), Qt.AlignCenter, "DC")
+            self.bg_color = QColor("#4d6bfe") # DeepSeek 蓝
+            # 也可以尝试 fa5s.brain 代表 AI，或者保持 fa5s.robot
+            self.pixmap = qta.icon('fa5s.robot', color='white').pixmap(icon_size, icon_size)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing) # 开启抗锯齿
+        
+        # 绘制圆形背景
+        # 使用 fillPath 替代 setClipPath，边缘更平滑
+        path = QPainterPath()
+        # 稍微留一点边距(0.5px)避免边缘被切掉
+        path.addEllipse(1, 1, self.width()-2, self.height()-2)
+        painter.fillPath(path, self.bg_color)
+        
+        # 绘制居中图标
+        if self.pixmap:
+            # 使用浮点数计算中心点，虽然 drawPixmap 接受整数，但在小尺寸下逻辑更清晰
+            x = (self.width() - self.pixmap.width()) // 2
+            y = (self.height() - self.pixmap.height()) // 2
+            painter.drawPixmap(x, y, self.pixmap)
 
 class SettingsDialog(QDialog):
     def __init__(self, config_manager, parent=None):
@@ -115,6 +151,25 @@ class SettingsDialog(QDialog):
                 self.default_ws_input.setText(directory)
 
         default_ws_btn.clicked.connect(choose_default_workspace)
+
+        # Chat History Dir
+        self.history_dir_input = QLineEdit()
+        self.history_dir_input.setText(self.config_manager.get_chat_history_dir())
+        history_dir_container = QWidget()
+        history_dir_layout = QHBoxLayout(history_dir_container)
+        history_dir_layout.setContentsMargins(0, 0, 0, 0)
+        history_dir_layout.addWidget(self.history_dir_input, 1)
+        history_dir_btn = QPushButton("选择")
+        history_dir_btn.setFixedWidth(60)
+        history_dir_layout.addWidget(history_dir_btn)
+        form_layout.addRow("聊天记录存储:", history_dir_container)
+
+        def choose_history_dir():
+            directory = QFileDialog.getExistingDirectory(self, "选择聊天记录目录")
+            if directory:
+                self.history_dir_input.setText(directory)
+
+        history_dir_btn.clicked.connect(choose_history_dir)
         
         # God Mode Toggle
         self.god_mode_check = QCheckBox("启用 God Mode (解除安全限制)")
@@ -145,6 +200,7 @@ class SettingsDialog(QDialog):
             base_url = "https://api.deepseek.com"
         self.config_manager.set("base_url", base_url)
         self.config_manager.set("default_workspace", self.default_ws_input.text().strip())
+        self.config_manager.set_chat_history_dir(self.history_dir_input.text().strip())
         # Save God Mode
         self.config_manager.set_god_mode(self.god_mode_check.isChecked())
         
@@ -190,11 +246,13 @@ class SkillsCenterDialog(QDialog):
         
         # Bottom Bar (Import & Refresh)
         bottom_layout = QHBoxLayout()
-        import_btn = QPushButton("📦 导入新功能包")
+        import_btn = QPushButton(" 导入新功能包")
+        import_btn.setIcon(qta.icon('fa5s.box-open', color='#374151'))
         import_btn.clicked.connect(self.import_skill)
         bottom_layout.addWidget(import_btn)
         
-        refresh_btn = QPushButton("🔄 刷新列表")
+        refresh_btn = QPushButton(" 刷新列表")
+        refresh_btn.setIcon(qta.icon('fa5s.sync', color='#374151'))
         refresh_btn.clicked.connect(self.manual_refresh)
         bottom_layout.addWidget(refresh_btn)
 
@@ -257,9 +315,32 @@ class SkillsCenterDialog(QDialog):
         deps = skill.get('dependencies', [])
         if deps and isinstance(deps, list):
             deps_str = ", ".join(deps)
-            deps_lbl = QLabel(f"📦 依赖: {deps_str}")
-            deps_lbl.setStyleSheet("color: #1a73e8; font-size: 11px; margin-top: 4px;")
-            v_layout.addWidget(deps_lbl)
+            deps_lbl = QLabel(f" 依赖: {deps_str}")
+            deps_lbl.setPixmap(qta.icon('fa5s.box', color='#1a73e8').pixmap(12, 12))
+            deps_lbl = QLabel() # Re-create to use layout for icon+text or just text with emoji? 
+            # Let's keep it simple with text but replace emoji with a small icon if possible or just text
+            # Using simple text for now to avoid layout complexity in this list
+            deps_lbl.setText(f"  依赖: {deps_str}")
+            # Actually, let's use rich text to insert an icon or just use a simple char if qta is hard here
+            # We can use a small pixmap label + text label in a horizontal layout
+            
+            deps_container = QWidget()
+            deps_layout = QHBoxLayout(deps_container)
+            deps_layout.setContentsMargins(0,0,0,0)
+            deps_layout.setSpacing(4)
+            
+            icon_lbl = QLabel()
+            icon_lbl.setPixmap(qta.icon('fa5s.box', color='#1a73e8').pixmap(12, 12))
+            icon_lbl.setFixedSize(14, 14)
+            
+            txt_lbl = QLabel(f"依赖: {deps_str}")
+            txt_lbl.setStyleSheet("color: #1a73e8; font-size: 11px;")
+            
+            deps_layout.addWidget(icon_lbl)
+            deps_layout.addWidget(txt_lbl)
+            deps_layout.addStretch()
+            
+            v_layout.addWidget(deps_container)
 
         # Experience (Evolution)
         exp = skill.get('experience', [])
@@ -269,9 +350,23 @@ class SkillsCenterDialog(QDialog):
              exp_layout = QVBoxLayout(exp_frame)
              exp_layout.setContentsMargins(4,4,4,4)
              exp_layout.setSpacing(2)
-             exp_header = QLabel(f"📈 进化记录 ({len(exp)})")
+             
+             header_container = QWidget()
+             h_layout_exp = QHBoxLayout(header_container)
+             h_layout_exp.setContentsMargins(0,0,0,0)
+             h_layout_exp.setSpacing(4)
+             
+             exp_icon = QLabel()
+             exp_icon.setPixmap(qta.icon('fa5s.chart-line', color='#33691e').pixmap(12, 12))
+             exp_header = QLabel(f"进化记录 ({len(exp)})")
              exp_header.setStyleSheet("font-weight: bold; color: #33691e; font-size: 11px;")
-             exp_layout.addWidget(exp_header)
+             
+             h_layout_exp.addWidget(exp_icon)
+             h_layout_exp.addWidget(exp_header)
+             h_layout_exp.addStretch()
+             
+             exp_layout.addWidget(header_container)
+             
              for e in exp:
                  e_lbl = QLabel(f"• {e}")
                  e_lbl.setStyleSheet("color: #558b2f; font-size: 10px;")
@@ -283,9 +378,23 @@ class SkillsCenterDialog(QDialog):
         if 'security_level' in skill:
              sec_lvl = skill['security_level']
              color = "#e67c73" if "high" in sec_lvl.lower() else "#fbbc04"
-             sec_lbl = QLabel(f"🛡️ 安全等级: {sec_lvl}")
-             sec_lbl.setStyleSheet(f"color: {color}; font-size: 11px; margin-top: 4px;")
-             v_layout.addWidget(sec_lbl)
+             
+             sec_container = QWidget()
+             sec_layout = QHBoxLayout(sec_container)
+             sec_layout.setContentsMargins(0,4,0,0)
+             sec_layout.setSpacing(4)
+             
+             sec_icon = QLabel()
+             sec_icon.setPixmap(qta.icon('fa5s.shield-alt', color=color).pixmap(12, 12))
+             
+             sec_lbl = QLabel(f"安全等级: {sec_lvl}")
+             sec_lbl.setStyleSheet(f"color: {color}; font-size: 11px;")
+             
+             sec_layout.addWidget(sec_icon)
+             sec_layout.addWidget(sec_lbl)
+             sec_layout.addStretch()
+             
+             v_layout.addWidget(sec_container)
 
         h_layout.addLayout(v_layout)
         
@@ -344,15 +453,18 @@ class AutoResizingLabel(QLabel):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
+        menu.setStyleSheet(MENU_STYLESHEET)
         
         # 复制 (Copy)
         action_copy = QAction("复制", self)
+        action_copy.setIcon(qta.icon('fa5s.copy', color='#4b5563'))
         action_copy.triggered.connect(lambda: QApplication.clipboard().setText(self.selectedText()))
         action_copy.setEnabled(self.hasSelectedText())
         menu.addAction(action_copy)
         
         # 全选 (Select All)
         action_select_all = QAction("全选", self)
+        action_select_all.setIcon(qta.icon('fa5s.mouse-pointer', color='#4b5563'))
         action_select_all.triggered.connect(lambda: self.setSelection(0, len(self.text())))
         menu.addAction(action_select_all)
         
@@ -365,15 +477,18 @@ class ReadOnlyTextEdit(QTextEdit):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
+        menu.setStyleSheet(MENU_STYLESHEET)
         
         # 复制 (Copy)
         action_copy = QAction("复制", self)
+        action_copy.setIcon(qta.icon('fa5s.copy', color='#4b5563'))
         action_copy.triggered.connect(self.copy)
         action_copy.setEnabled(self.textCursor().hasSelection())
         menu.addAction(action_copy)
         
         # 全选 (Select All)
         action_select_all = QAction("全选", self)
+        action_select_all.setIcon(qta.icon('fa5s.mouse-pointer', color='#4b5563'))
         action_select_all.triggered.connect(self.selectAll)
         menu.addAction(action_select_all)
         
@@ -397,11 +512,127 @@ class AutoResizingTextEdit(ReadOnlyTextEdit):
         margins = self.contentsMargins()
         height = int(doc_height + margins.top() + margins.bottom())
         # Ensure minimum height to avoid invisible widget
-        self.setFixedHeight(max(height + 10, 24))
+        self.setFixedHeight(max(height, 24))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.adjustHeight()
+
+class AutoResizingInputEdit(QTextEdit):
+    returnPressed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFrameStyle(QFrame.NoFrame)
+        self.textChanged.connect(self.adjustHeight)
+        self.setFixedHeight(45) # Initial height
+        self.min_height = 45
+        self.max_height = 150
+        
+    def adjustHeight(self):
+        doc_height = self.document().size().height()
+        margins = self.contentsMargins()
+        height = int(doc_height + margins.top() + margins.bottom())
+        
+        # Clamp height
+        if height < self.min_height:
+            height = self.min_height
+        elif height > self.max_height:
+            # Enable scrollbar if content exceeds max height
+            self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            height = self.max_height
+        else:
+            self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            height = max(height, self.min_height)
+            
+        self.setFixedHeight(height)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            if event.modifiers() & Qt.ShiftModifier:
+                # Shift+Enter: Insert new line
+                super().keyPressEvent(event)
+            else:
+                # Enter: Send message
+                self.returnPressed.emit()
+        else:
+            super().keyPressEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.adjustHeight()
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        if urls:
+            path = urls[0].toLocalFile()
+            if os.path.isdir(path):
+                event.ignore() # Let MainWindow handle workspace switch
+                return
+            elif os.path.isfile(path):
+                self.insertPlainText(path)
+                event.acceptProposedAction()
+                return
+        super().dropEvent(event)
+
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        menu.setStyleSheet(MENU_STYLESHEET)
+        
+        # Undo
+        action_undo = QAction("撤销", self)
+        action_undo.setIcon(qta.icon('fa5s.undo', color='#4b5563'))
+        action_undo.triggered.connect(self.undo)
+        action_undo.setEnabled(self.document().isUndoAvailable())
+        menu.addAction(action_undo)
+        
+        # Redo
+        action_redo = QAction("重做", self)
+        action_redo.setIcon(qta.icon('fa5s.redo', color='#4b5563'))
+        action_redo.triggered.connect(self.redo)
+        action_redo.setEnabled(self.document().isRedoAvailable())
+        menu.addAction(action_redo)
+        
+        menu.addSeparator()
+
+        # Cut
+        action_cut = QAction("剪切", self)
+        action_cut.setIcon(qta.icon('fa5s.cut', color='#4b5563'))
+        action_cut.triggered.connect(self.cut)
+        action_cut.setEnabled(self.textCursor().hasSelection())
+        menu.addAction(action_cut)
+
+        # Copy
+        action_copy = QAction("复制", self)
+        action_copy.setIcon(qta.icon('fa5s.copy', color='#4b5563'))
+        action_copy.triggered.connect(self.copy)
+        action_copy.setEnabled(self.textCursor().hasSelection())
+        menu.addAction(action_copy)
+        
+        # Paste
+        action_paste = QAction("粘贴", self)
+        action_paste.setIcon(qta.icon('fa5s.paste', color='#4b5563'))
+        action_paste.triggered.connect(self.paste)
+        action_paste.setEnabled(self.canPaste())
+        menu.addAction(action_paste)
+        
+        menu.addSeparator()
+        
+        # Select All
+        action_select_all = QAction("全选", self)
+        action_select_all.setIcon(qta.icon('fa5s.mouse-pointer', color='#4b5563'))
+        action_select_all.triggered.connect(self.selectAll)
+        menu.addAction(action_select_all)
+        
+        menu.exec(event.globalPos())
 
 class SystemToast(QFrame):
     """System Notification in Chat Stream"""
@@ -415,22 +646,22 @@ class SystemToast(QFrame):
         
         icon_label = QLabel()
         if type == "error":
-            icon_label.setText("❌")
+            icon_label.setPixmap(qta.icon('fa5s.times-circle', color='#991b1b').pixmap(16, 16))
             bg_color = "#fef2f2"
             text_color = "#991b1b"
             border_color = "#fecaca"
         elif type == "success":
-            icon_label.setText("✅")
+            icon_label.setPixmap(qta.icon('fa5s.check-circle', color='#166534').pixmap(16, 16))
             bg_color = "#f0fdf4"
             text_color = "#166534"
             border_color = "#bbf7d0"
         elif type == "warning":
-            icon_label.setText("⚠️")
+            icon_label.setPixmap(qta.icon('fa5s.exclamation-triangle', color='#92400e').pixmap(16, 16))
             bg_color = "#fffbeb"
             text_color = "#92400e"
             border_color = "#fde68a"
         else:
-            icon_label.setText("ℹ️")
+            icon_label.setPixmap(qta.icon('fa5s.info-circle', color='#1e40af').pixmap(16, 16))
             bg_color = "#eff6ff"
             text_color = "#1e40af"
             border_color = "#bfdbfe"
@@ -489,6 +720,13 @@ class ChatBubble(QFrame):
             content_label.setWordWrap(True)
             content_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
             content_label.setStyleSheet("color: #ffffff; font-size: 14px; line-height: 1.6; border: none; background: transparent;")
+            
+            # Smart Width: If text is long, force a minimum width to avoid narrow tall bubbles
+            fm = QFontMetrics(content_label.font())
+            # Check if text is long enough to warrant a wider bubble
+            if len(text) > 50 or fm.horizontalAdvance(text) > 400:
+                content_label.setMinimumWidth(400)
+                
             bubble_layout.addWidget(content_label)
             
             cw_layout.addWidget(bubble_frame)
@@ -499,14 +737,26 @@ class ChatBubble(QFrame):
             
             # Avatar
             avatar = Avatar("User", 40)
-            main_layout.addWidget(avatar, alignment=Qt.AlignTop)
+            avatar_container = QWidget()
+            avatar_layout = QVBoxLayout(avatar_container)
+            avatar_layout.setContentsMargins(0, 5, 0, 0) # Top margin for alignment
+            avatar_layout.setSpacing(0)
+            avatar_layout.addWidget(avatar)
+            avatar_layout.addStretch()
+            main_layout.addWidget(avatar_container)
 
         else: # Agent
             main_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
             
             # Avatar
             avatar = Avatar("Agent", 40)
-            main_layout.addWidget(avatar, alignment=Qt.AlignTop)
+            avatar_container = QWidget()
+            avatar_layout = QVBoxLayout(avatar_container)
+            avatar_layout.setContentsMargins(0, 5, 0, 0) # Top margin for alignment
+            avatar_layout.setSpacing(0)
+            avatar_layout.addWidget(avatar)
+            avatar_layout.addStretch()
+            main_layout.addWidget(avatar_container)
             
             # Content Column
             content_col = QWidget()
@@ -522,7 +772,8 @@ class ChatBubble(QFrame):
             think_layout.setSpacing(0)
             
             # Toggle Header
-            self.think_toggle_btn = QPushButton("💡 思考过程")
+            self.think_toggle_btn = QPushButton(" 思考过程")
+            self.think_toggle_btn.setIcon(qta.icon('fa5s.lightbulb', color='#f59e0b'))
             self.think_toggle_btn.setCursor(Qt.PointingHandCursor)
             self.think_toggle_btn.setCheckable(True)
             self.think_toggle_btn.setChecked(False)
@@ -591,19 +842,62 @@ class ChatBubble(QFrame):
                 self.set_main_content(text)
                 
             main_layout.addWidget(content_col)
-            main_layout.addStretch() # Don't stretch content too wide
+            # main_layout.addStretch() # Removed to allow content to take full width
 
     def toggle_thinking(self, checked):
-        self.think_container.setVisible(checked)
+        # Animation for Folding
+        if not hasattr(self, 'think_animation'):
+             self.think_animation = QPropertyAnimation(self.think_container, b"maximumHeight")
+             self.think_animation.setEasingCurve(QEasingCurve.OutCubic)
+             self.think_animation.setDuration(300)
+
+        # Calculate target height
+        # Since we can't easily get exact height if it's dynamic and hidden,
+        # we can set a large max height for open, and 0 for closed.
+        # Or better: use sizeHint if visible, or a large number.
+        
+        # When opening
+        if checked:
+            self.think_container.setVisible(True)
+            self.think_container.setMaximumHeight(0) # Start from 0
+            
+            # We need to force layout to calculate size
+            self.think_container.adjustSize() 
+            # This might be tricky with dynamic content. 
+            # Simple approach: Animate to a large value (e.g. 1000 or 5000), 
+            # then remove constraint or set to minimum required.
+            
+            # Better approach for smooth slide:
+            # 1. Get total height of content
+            total_height = self.think_container_layout.sizeHint().height()
+            # If sizeHint is small (hidden), try measure content
+            if total_height < 50: total_height = 1000 # Fallback
+            
+            self.think_animation.setStartValue(0)
+            self.think_animation.setEndValue(total_height)
+            self.think_animation.finished.connect(lambda: self.think_container.setMaximumHeight(16777215)) # Reset to QWIDGETSIZE_MAX
+            self.think_animation.start()
+            
+        else:
+            # Closing
+            current_h = self.think_container.height()
+            self.think_animation.setStartValue(current_h)
+            self.think_animation.setEndValue(0)
+            # Disconnect previous connections to avoid stacking
+            try: self.think_animation.finished.disconnect() 
+            except: pass
+            self.think_animation.finished.connect(lambda: self.think_container.setVisible(False))
+            self.think_animation.start()
+            
         # Use Chevron or similar, but keep the Lightbulb fixed
         text = self.think_toggle_btn.text()
-        base_text = "💡 思考过程"
+        base_text = " 思考过程"
         
         # If we have duration in text
         if "(" in text:
              parts = text.split("(")
              duration_part = "(" + parts[1]
-             base_text = f"💡 思考过程 {duration_part}"
+             base_text = f" 思考过程 {duration_part}"
              
         if checked:
              self.think_toggle_btn.setText(base_text) # Maybe add arrow if needed, but styling shows state
@@ -612,7 +906,7 @@ class ChatBubble(QFrame):
         
     def set_thinking_state(self, is_thinking):
         if is_thinking:
-            self.think_toggle_btn.setText("💡 思考中…")
+            self.think_toggle_btn.setText(" 思考中…")
             self.think_toggle_btn.setChecked(True)
             self.thinking_widget.setVisible(True)
 
@@ -638,7 +932,7 @@ class ChatBubble(QFrame):
             widget.setText(current + text)
         
         if duration:
-            self.think_toggle_btn.setText(f"💡 深度思考 ({duration:.1f}s)")
+            self.think_toggle_btn.setText(f" 深度思考 ({duration:.1f}s)")
         
         if is_final:
             self.think_toggle_btn.setChecked(False) # Collapse by default when done
@@ -778,15 +1072,16 @@ class ToolCallCard(QFrame):
         
         # 1. Icon Area 
         tool_icons = {
-            "list_files": "📁", "read_file": "📖", "write_file": "✍️",
-            "update_file": "✍️", "delete_file": "🗑️", "run_command": "▶️",
-            "open_preview": "🧭", "search_codebase": "🔎", "grep": "🧵",
-            "glob": "🧭", "web_search": "🌐", "get_diagnostics": "🩺",
+            "list_files": "fa5s.folder", "read_file": "fa5s.book-open", "write_file": "fa5s.pen-alt",
+            "update_file": "fa5s.pen", "delete_file": "fa5s.trash-alt", "run_command": "fa5s.terminal",
+            "open_preview": "fa5s.compass", "search_codebase": "fa5s.search", "grep": "fa5s.filter",
+            "glob": "fa5s.globe", "web_search": "fa5s.globe-americas", "get_diagnostics": "fa5s.stethoscope",
         }
-        icon_char = tool_icons.get(tool_name, "🛠️")
+        icon_name = tool_icons.get(tool_name, "fa5s.tools")
         
         # Icon with base
-        self.icon_label = QLabel(icon_char)
+        self.icon_label = QLabel()
+        self.icon_label.setPixmap(qta.icon(icon_name, color='#4b5563').pixmap(18, 18))
         self.icon_label.setFixedSize(32, 32)
         self.icon_label.setAlignment(Qt.AlignCenter)
         self.icon_label.setStyleSheet("""
@@ -818,8 +1113,9 @@ class ToolCallCard(QFrame):
         text_layout.addWidget(args_preview)
         
         # 3. Right Side Controls
-        self.status_icon = QLabel("⏳") # Default running
-        self.status_icon.setStyleSheet("font-size: 12px; border: none; background: transparent;")
+        self.status_icon = QLabel() # Default running
+        self.status_icon.setPixmap(qta.icon('fa5s.spinner', color='#6b7280', animation=qta.Spin(self.status_icon)).pixmap(14, 14))
+        self.status_icon.setStyleSheet("border: none; background: transparent;")
         
         self.view_btn = QPushButton("查看")
         self.view_btn.setCursor(Qt.PointingHandCursor)
@@ -875,7 +1171,7 @@ class ToolCallCard(QFrame):
             """)
 
     def set_result(self, result_text):
-        self.status_icon.setText("✅") 
+        self.status_icon.setPixmap(qta.icon('fa5s.check-circle', color='#10b981').pixmap(14, 14))
         self.result = result_text
 
 class SessionState:
@@ -915,6 +1211,7 @@ class MainWindow(QMainWindow):
 
             
         self.resize(1100, 800)
+        self.setAcceptDrops(True)
         self.workspace_dir = None
         
         # Apply Clean Light Theme manually for optimized components
@@ -922,7 +1219,7 @@ class MainWindow(QMainWindow):
             QMainWindow { background-color: #ffffff; }
             QLabel[roleTitle="true"] { font-size: 18px; font-weight: 600; color: #111827; }
             QLabel[roleSubtitle="true"] { font-size: 13px; color: #6b7280; }
-            QLineEdit#MainInput {
+            QTextEdit#MainInput {
                 padding: 12px 16px;
                 border-radius: 24px;
                 border: 1px solid #e2e8f0;
@@ -930,7 +1227,7 @@ class MainWindow(QMainWindow):
                 font-size: 14px;
                 color: #1e293b;
             }
-            QLineEdit#MainInput:focus {
+            QTextEdit#MainInput:focus {
                 border: 1px solid #3b82f6;
                 background: #ffffff;
             }
@@ -948,7 +1245,7 @@ class MainWindow(QMainWindow):
                 color: #2563eb;
                 font-weight: bold;
             }
-            
+
             /* Global Scrollbar Beautification */
             QScrollBar:vertical {
                 border: none;
@@ -1037,7 +1334,8 @@ class MainWindow(QMainWindow):
         app_subtitle.setProperty("roleSubtitle", True)
         sidebar_layout.addWidget(app_subtitle)
 
-        new_chat_btn = QPushButton("＋ 新建对话")
+        new_chat_btn = QPushButton(" 新建对话")
+        new_chat_btn.setIcon(qta.icon('fa5s.plus', color='#ffffff'))
         new_chat_btn.setCursor(Qt.PointingHandCursor)
         new_chat_btn.setStyleSheet("""
             QPushButton {
@@ -1076,13 +1374,15 @@ class MainWindow(QMainWindow):
             QPushButton:hover { background-color: #e5e7eb; color: #111827; }
         """
         
-        sidebar_settings_btn = QPushButton("⚙️ 系统设置")
+        sidebar_settings_btn = QPushButton(" 系统设置")
+        sidebar_settings_btn.setIcon(qta.icon('fa5s.cog', color='#4b5563'))
         sidebar_settings_btn.setCursor(Qt.PointingHandCursor)
         sidebar_settings_btn.setStyleSheet(sidebar_btn_style)
         sidebar_settings_btn.clicked.connect(self.open_settings)
         sidebar_layout.addWidget(sidebar_settings_btn)
         
-        sidebar_skills_btn = QPushButton("🧩 功能中心")
+        sidebar_skills_btn = QPushButton(" 功能中心")
+        sidebar_skills_btn.setIcon(qta.icon('fa5s.puzzle-piece', color='#4b5563'))
         sidebar_skills_btn.setCursor(Qt.PointingHandCursor)
         sidebar_skills_btn.setStyleSheet(sidebar_btn_style)
         sidebar_skills_btn.clicked.connect(self.open_skills_center)
@@ -1257,14 +1557,16 @@ class MainWindow(QMainWindow):
         self.ws_label = QLabel("当前文件夹: 未选择")
         self.ws_label.setStyleSheet("color: #6b7280; font-weight: 500;")
         
-        self.recent_btn = QPushButton("🕒")
+        self.recent_btn = QPushButton()
+        self.recent_btn.setIcon(qta.icon('fa5s.history', color='#6b7280'))
         self.recent_btn.setToolTip("最近使用的文件夹")
         self.recent_btn.setFixedWidth(32)
         self.recent_btn.setCursor(Qt.PointingHandCursor)
         self.recent_btn.setStyleSheet("border: none; background: transparent;")
         self.recent_btn.clicked.connect(self.show_recent_menu)
         
-        self.ws_btn = QPushButton("📂 切换")
+        self.ws_btn = QPushButton(" 切换")
+        self.ws_btn.setIcon(qta.icon('fa5s.folder-open', color='#374151'))
         self.ws_btn.setCursor(Qt.PointingHandCursor)
         self.ws_btn.setStyleSheet("background: white; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 12px; color: #374151;")
         self.ws_btn.clicked.connect(self.select_workspace)
@@ -1293,29 +1595,34 @@ class MainWindow(QMainWindow):
         input_layout = QHBoxLayout(input_card)
         input_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.input_field = QLineEdit()
+        self.input_field = AutoResizingInputEdit()
         self.input_field.setObjectName("MainInput")
         self.input_field.setPlaceholderText("例如：把这个文件夹里的图片按日期分类")
         self.input_field.returnPressed.connect(self.handle_send)
 
-        self.example_btn = QPushButton("💡 示例")
+        self.example_btn = QPushButton(" 示例")
+        self.example_btn.setIcon(qta.icon('fa5s.lightbulb', color='#4d6bfe'))
         self.example_btn.setCursor(Qt.PointingHandCursor)
         self.example_btn.setStyleSheet("border: none; color: #4d6bfe; font-weight: 500; background: transparent;")
         self.example_btn.clicked.connect(self.insert_example)
         
-        self.pause_btn = QPushButton("⏸️")
+        self.pause_btn = QPushButton()
+        self.pause_btn.setIcon(qta.icon('fa5s.pause', color='#4b5563'))
         self.pause_btn.clicked.connect(self.toggle_pause)
         self.pause_btn.setVisible(False)
         self.pause_btn.setStyleSheet("border: none; font-size: 16px;")
         
         self.action_btn = QPushButton("发送")
+        self.action_btn.setIcon(qta.icon('fa5s.paper-plane', color='white'))
         self.action_btn.setCursor(Qt.PointingHandCursor)
         self.action_btn.setFixedSize(60, 36)
         self.action_btn.setStyleSheet("background-color: #4d6bfe; color: white; border-radius: 18px; font-weight: bold; border: none;")
         self.action_btn.clicked.connect(self.on_action_clicked)
         
-        self.loop_hint = QLabel("⚠️ 循环中")
-        self.loop_hint.setStyleSheet("color: #ef4444; font-size: 11px; margin-right: 8px;")
+        self.loop_hint = QPushButton(" 循环中")
+        self.loop_hint.setIcon(qta.icon('fa5s.exclamation-circle', color='#ef4444'))
+        self.loop_hint.setFlat(True)
+        self.loop_hint.setStyleSheet("color: #ef4444; font-size: 11px; margin-right: 8px; border: none; text-align: left;")
         self.loop_hint.setVisible(False)
 
         # Input Layout
@@ -1350,7 +1657,7 @@ class MainWindow(QMainWindow):
 
         # Init Data
         self.data_dir = get_app_data_dir()
-        self.chat_history_dir = os.path.join(self.data_dir, 'chat_history')
+        self.chat_history_dir = self.config_manager.get_chat_history_dir()
         os.makedirs(self.chat_history_dir, exist_ok=True)
         
         self.create_new_session()
@@ -1395,6 +1702,7 @@ class MainWindow(QMainWindow):
         
         if running or running_code:
             self.action_btn.setText("停止")
+            self.action_btn.setIcon(qta.icon('fa5s.stop', color='white'))
             self.action_btn.setStyleSheet("background-color: #ef4444; color: white; border-radius: 18px; font-weight: bold; border: none;")
             self.action_btn.setEnabled(True)
             self.input_field.setEnabled(False)
@@ -1405,6 +1713,7 @@ class MainWindow(QMainWindow):
             self.example_btn.setVisible(False)
         else:
             self.action_btn.setText("发送")
+            self.action_btn.setIcon(qta.icon('fa5s.paper-plane', color='white'))
             self.action_btn.setStyleSheet("background-color: #4d6bfe; color: white; border-radius: 18px; font-weight: bold; border: none;")
             self.action_btn.setEnabled(True)
             self.input_field.setEnabled(True)
@@ -1636,13 +1945,55 @@ class MainWindow(QMainWindow):
                     reasoning = msg.get('reasoning')
                     if role == 'user':
                         self.add_chat_bubble('User', content)
-                    elif role == 'assistant' and content:
-                        self.add_chat_bubble('Agent', content, thinking=reasoning)
+                    elif role == 'assistant':
+                        if content or reasoning or msg.get('tool_calls'):
+                            self.add_chat_bubble('Agent', content, thinking=reasoning)
+                        
+                        tool_calls = msg.get('tool_calls')
+                        if tool_calls:
+                            for tc in tool_calls:
+                                t_id = tc.get('id')
+                                func = tc.get('function', {})
+                                t_name = func.get('name')
+                                t_args = func.get('arguments')
+                                self.add_tool_card({
+                                    'id': t_id,
+                                    'name': t_name,
+                                    'args': t_args
+                                }, session_id=session_id)
+                    elif role == 'tool':
+                        t_id = msg.get('tool_call_id')
+                        t_result = content
+                        if t_id:
+                            self.update_tool_card({
+                                'id': t_id,
+                                'result': t_result
+                            }, session_id=session_id)
             except Exception as e:
                 print(f"Error loading session: {e}")
         self.update_session_tab_title(session_id)
         self.refresh_history_list()
         self.normalize_session_ui(self.get_current_session())
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        if not urls:
+            return
+            
+        path = urls[0].toLocalFile()
+        if os.path.isdir(path):
+            # Switch workspace
+            self.load_workspace(path)
+        elif os.path.isfile(path):
+            # Add file path to input
+            if hasattr(self, 'input_field'):
+                current_text = self.input_field.toPlainText()
+                new_text = f"{current_text}\n{path}" if current_text else path
+                self.input_field.setText(new_text)
 
     def new_conversation(self):
         self.create_new_session()
@@ -1688,6 +2039,7 @@ class MainWindow(QMainWindow):
 
     def show_recent_menu(self):
         menu = QMenu(self)
+        menu.setStyleSheet(MENU_STYLESHEET)
         if not self.recent_workspaces:
             no_action = QAction("无最近记录", self)
             no_action.setEnabled(False)
@@ -1713,10 +2065,19 @@ class MainWindow(QMainWindow):
         path = self.file_model.filePath(index)
         if not os.path.exists(path): return
         menu = QMenu(self)
+        menu.setStyleSheet(MENU_STYLESHEET)
+        
         open_action = QAction("打开", self)
+        open_action.setIcon(qta.icon('fa5s.external-link-alt', color='#4b5563'))
+        
         reveal_action = QAction("在资源管理器中显示", self)
+        reveal_action.setIcon(qta.icon('fa5s.folder-open', color='#4b5563'))
+        
         copy_path_action = QAction("复制路径", self)
+        copy_path_action.setIcon(qta.icon('fa5s.copy', color='#4b5563'))
+        
         delete_action = QAction("删除", self)
+        delete_action.setIcon(qta.icon('fa5s.trash-alt', color='#ef4444'))
 
         open_action.triggered.connect(lambda: self.open_path_in_system(path))
         reveal_action.triggered.connect(lambda: self.reveal_in_explorer(path))
@@ -1800,10 +2161,14 @@ class MainWindow(QMainWindow):
         if state and state.llm_worker and state.llm_worker.isRunning():
             if state.llm_worker.is_paused:
                 state.llm_worker.resume()
-                self.pause_btn.setText("⏸️")
+                self.pause_btn.setText("")
+                self.pause_btn.setIcon(qta.icon('fa5s.pause', color='#4b5563'))
+                self.pause_btn.setToolTip("暂停")
             else:
                 state.llm_worker.pause()
-                self.pause_btn.setText("▶️")
+                self.pause_btn.setText("")
+                self.pause_btn.setIcon(qta.icon('fa5s.play', color='#10b981'))
+                self.pause_btn.setToolTip("继续")
 
     def stop_agent(self):
         state = self.get_current_session()
@@ -1832,7 +2197,7 @@ class MainWindow(QMainWindow):
         if not self.workspace_dir:
             QMessageBox.warning(self, "提示", "请先选择一个工作区目录！")
             return
-        user_text = self.input_field.text().strip()
+        user_text = self.input_field.toPlainText().strip()
         if not user_text: return
 
         self.add_chat_bubble("User", user_text)
@@ -2028,11 +2393,15 @@ class MainWindow(QMainWindow):
         bubble.update_thinking(duration=duration, is_final=True)
         bubble.set_main_content(content)
 
-        state.messages.append({
-            "role": role, 
-            "content": content,
-            "reasoning": reasoning
-        })
+        generated_messages = result.get("generated_messages", [])
+        if generated_messages:
+            state.messages.extend(generated_messages)
+        else:
+            state.messages.append({
+                "role": role, 
+                "content": content,
+                "reasoning": reasoning
+            })
         self.save_chat_history()
         self.update_session_tab_title(state.session_id)
 

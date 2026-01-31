@@ -135,14 +135,14 @@ def get_tech_stylesheet(theme="dark"):
     }}
     
     /* Search Box / Chips */
-    QLineEdit#MainInput {{
+    QTextEdit#MainInput {{
         font-size: 15px;
         border: 1px solid {c_border};
         border-radius: 20px; /* Pill shape */
         padding: 10px 16px;
         background-color: {c_bg_card};
     }}
-    QLineEdit#MainInput:focus {{
+    QTextEdit#MainInput:focus {{
         border: 2px solid {c_accent};
     }}
 
@@ -258,11 +258,12 @@ def apply_theme(app, theme="auto"):
     mode = theme
     if theme == "auto":
         # Check system (Qt6 specific)
-        from PySide6.QtGui import QGuiApplication
-        mode = "light"
-        if hasattr(QGuiApplication.styleHints(), "colorScheme"):
-            if QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark:
-                mode = "dark"
+        # User requested to disable dark mode detection for now as it may conflict with custom styling
+        mode = "light" 
+        # from PySide6.QtGui import QGuiApplication
+        # if hasattr(QGuiApplication.styleHints(), "colorScheme"):
+        #     if QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark:
+        #         mode = "dark"
     
     # 1. Load qdarktheme base
     base_sheet = qdarktheme.load_stylesheet(mode)

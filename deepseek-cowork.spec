@@ -26,7 +26,7 @@ a = Analysis(
         'bs4',
         'requests',
         'markdown',
-        'qdarktheme'
+        'qtawesome'
     ],
     hookspath=[],
     hooksconfig={},

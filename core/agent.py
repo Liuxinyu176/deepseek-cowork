@@ -267,6 +267,7 @@ class LLMWorker(QThread):
         final_content = ""
         turn_count = 0
         total_duration = 0
+        generated_messages = []
         
         last_tool_signature = None
         repetition_count = 0
@@ -398,6 +399,8 @@ class LLMWorker(QThread):
                     # We must use current_turn_reasoning, NOT full_reasoning, to avoid duplication in history
                     # Always include the key, even if empty, to satisfy API requirements
                     assistant_msg["reasoning_content"] = current_turn_reasoning
+                    # Also add 'reasoning' for UI compatibility (used by MainWindow)
+                    assistant_msg["reasoning"] = current_turn_reasoning
                         
                     if tool_calls:
                          # For history, we need the dict representation
@@ -412,6 +415,7 @@ class LLMWorker(QThread):
                              } for t in tool_calls
                          ]
                     current_messages.append(assistant_msg)
+                    generated_messages.append(assistant_msg)
                     
                     if tool_calls:
                         # --- Loop Detection ---
@@ -476,11 +480,13 @@ class LLMWorker(QThread):
                                 "result": str(result)
                             })
 
-                            current_messages.append({
+                            tool_msg = {
                                 "role": "tool",
                                 "tool_call_id": tool.id,
                                 "content": str(result) # Ensure content is string to avoid API errors
-                            })
+                            }
+                            current_messages.append(tool_msg)
+                            generated_messages.append(tool_msg)
                             self.step_signal.emit(f"Tool Result: {result}")
                         # Loop continues to let LLM see tool results
                         continue
@@ -512,5 +518,6 @@ class LLMWorker(QThread):
             "reasoning": full_reasoning.strip(),
             "content": final_content,
             "role": "assistant",
-            "duration": total_duration
+            "duration": total_duration,
+            "generated_messages": generated_messages
         })

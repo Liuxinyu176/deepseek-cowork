@@ -42,6 +42,14 @@ class ConfigManager:
         self.config["god_mode"] = enabled
         self.save_config()
 
+    def get_chat_history_dir(self):
+        default_dir = os.path.join(self.data_dir, 'chat_history')
+        return self.config.get("chat_history_dir", default_dir)
+
+    def set_chat_history_dir(self, path):
+        self.config["chat_history_dir"] = path
+        self.save_config()
+
     def load_config(self):
         if os.path.exists(self.config_path):
             try:
