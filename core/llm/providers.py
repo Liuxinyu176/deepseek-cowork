@@ -70,7 +70,12 @@ class OpenAIProvider(LLMProvider):
             m = msg.copy()
             # Remove internal keys
             m.pop("reasoning", None)
-            m.pop("reasoning_content", None)
+            
+            # DeepSeek Reasoner requires reasoning_content in some contexts (e.g. tool calls)
+            # Standard OpenAI does not support it.
+            # We preserve it only if the model name indicates DeepSeek.
+            if "deepseek" not in self.model_name.lower():
+                m.pop("reasoning_content", None)
             
             # Ensure tool_calls are correctly formatted if present
             if "tool_calls" in m and not m["tool_calls"]:

@@ -138,7 +138,7 @@ class SettingsDialog(QDialog):
         form_layout.addRow("API Key:", self.api_key_input)
         
         # API Key Guide
-        guide_label = QLabel('API Key 获取方法：<br>① DeepSeek: <a href="https://platform.deepseek.com/">DeepSeek 开发者平台</a><br>② Minimax: <a href="https://platform.minimaxi.com/">Minimax 开放平台</a>')
+        guide_label = QLabel('API Key 获取方法：<br>① DeepSeek: <a href="https://platform.deepseek.com/">DeepSeek 开发者平台</a>')
         guide_label.setStyleSheet("color: #5f6368; font-size: 11px; margin-bottom: 8px;")
         guide_label.setOpenExternalLinks(True)
         guide_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
@@ -3398,11 +3398,18 @@ class MainWindow(QMainWindow):
         state.llm_worker.skill_used_signal.connect(lambda name, sid=session_id: self.handle_skill_used(name, sid))
         state.llm_worker.tool_call_signal.connect(lambda data, sid=session_id: self.add_tool_card(data, sid))
         state.llm_worker.tool_result_signal.connect(lambda data, sid=session_id: self.update_tool_card(data, sid))
+        state.llm_worker.output_signal.connect(lambda text, sid=session_id: self.handle_worker_output(text, sid))
         state.llm_worker.agent_state_signal.connect(lambda data, sid=session_id: self.handle_agent_state(data, sid))
         state.llm_worker.start()
         
         if state.session_id == self.current_session_id:
              self.normalize_session_ui(state)
+
+    def handle_worker_output(self, text, session_id=None):
+        self.append_log(f"[Worker] {text}")
+        # If it looks like an error, show a toast
+        if "error" in text.lower() or "exception" in text.lower() or "fail" in text.lower():
+            self.add_system_toast(text, "error", session_id=session_id)
 
     def handle_agent_state(self, data, session_id=None):
         state = self.get_session(session_id)
