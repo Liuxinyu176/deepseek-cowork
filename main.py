@@ -25,7 +25,7 @@ from PySide6.QtGui import (QAction, QTextOption, QIcon, QFont, QFontMetrics, QPi
                           QDesktopServices, QGuiApplication, QColor, QPainter, 
                           QBrush, QPainterPath, QTextCursor, QTextCharFormat, QPen)
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget, QToolButton, QFileSystemModel, QTreeView, QSplitter, QSplitterHandle, QStackedWidget, QSizePolicy, QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QGridLayout)
+                               QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget, QToolButton, QFileSystemModel, QTreeView, QSplitter, QSplitterHandle, QStackedWidget, QSizePolicy, QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QGridLayout, QComboBox)
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize, QRect, QPoint, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QAbstractAnimation, QVariantAnimation
 
 # Try importing OpenAI
@@ -111,20 +111,34 @@ class SettingsDialog(QDialog):
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.setWindowTitle("设置")
-        self.resize(400, 200)
+        self.resize(450, 300)
         self.config_manager = config_manager
         
         layout = QVBoxLayout(self)
 
         # API Key
         form_layout = QFormLayout()
+
+        # LLM Provider
+        self.provider_combo = QComboBox()
+        self.provider_combo.addItem("OpenAI / DeepSeek / Compatible", "openai")
+        self.provider_combo.addItem("Anthropic / Claude / Minimax", "anthropic")
+        
+        current_provider = self.config_manager.get("llm_provider", "openai")
+        index = self.provider_combo.findData(current_provider)
+        if index >= 0:
+            self.provider_combo.setCurrentIndex(index)
+        
+        form_layout.addRow("LLM Provider:", self.provider_combo)
+
+        # API Key
         self.api_key_input = QLineEdit()
         self.api_key_input.setEchoMode(QLineEdit.Password)
         self.api_key_input.setText(self.config_manager.get("api_key", ""))
-        form_layout.addRow("DeepSeek API Key:", self.api_key_input)
+        form_layout.addRow("API Key:", self.api_key_input)
         
         # API Key Guide
-        guide_label = QLabel('API Key 获取方法：<br>① 进入 <a href="https://platform.deepseek.com/">DeepSeek 官方开发者平台</a> 注册登录<br>② 在开发者平台首页 -> API keys -> 创建 API key')
+        guide_label = QLabel('API Key 获取方法：<br>① DeepSeek: <a href="https://platform.deepseek.com/">DeepSeek 开发者平台</a><br>② Minimax: <a href="https://platform.minimaxi.com/">Minimax 开放平台</a>')
         guide_label.setStyleSheet("color: #5f6368; font-size: 11px; margin-bottom: 8px;")
         guide_label.setOpenExternalLinks(True)
         guide_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
@@ -135,6 +149,12 @@ class SettingsDialog(QDialog):
         self.base_url_input.setPlaceholderText("https://api.deepseek.com")
         self.base_url_input.setText(self.config_manager.get("base_url", "https://api.deepseek.com"))
         form_layout.addRow("API Base URL (可选):", self.base_url_input)
+
+        # Model Name
+        self.model_name_input = QLineEdit()
+        self.model_name_input.setPlaceholderText("deepseek-reasoner")
+        self.model_name_input.setText(self.config_manager.get("model_name", "deepseek-reasoner"))
+        form_layout.addRow("Model Name:", self.model_name_input)
 
         self.default_ws_input = QLineEdit()
         self.default_ws_input.setPlaceholderText("未设置")
@@ -195,6 +215,8 @@ class SettingsDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def save_settings(self):
+        # Save Provider
+        self.config_manager.set("llm_provider", self.provider_combo.currentData())
         # Save API Key
         self.config_manager.set("api_key", self.api_key_input.text().strip())
         # Save Base URL
@@ -202,6 +224,12 @@ class SettingsDialog(QDialog):
         if not base_url:
             base_url = "https://api.deepseek.com"
         self.config_manager.set("base_url", base_url)
+        # Save Model Name
+        model_name = self.model_name_input.text().strip()
+        if not model_name:
+            model_name = "deepseek-reasoner"
+        self.config_manager.set("model_name", model_name)
+
         self.config_manager.set("default_workspace", self.default_ws_input.text().strip())
         self.config_manager.set_chat_history_dir(self.history_dir_input.text().strip())
         # Save God Mode

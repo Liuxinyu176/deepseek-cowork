@@ -26,7 +26,9 @@ a = Analysis(
         'bs4',
         'requests',
         'markdown',
-        'qtawesome'
+        'qtawesome',
+        'anthropic',
+        'openai'
     ],
     hookspath=[],
     hooksconfig={},
