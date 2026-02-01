@@ -12,6 +12,7 @@ from datetime import datetime
 from PySide6.QtCore import QThread, Signal, QObject, QMutex, QWaitCondition
 from core.skill_manager import SkillManager
 from core.env_utils import get_python_executable
+from core.llm.factory import LLMFactory
 
 try:
     from openai import OpenAI
