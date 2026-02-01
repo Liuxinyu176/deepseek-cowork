@@ -200,6 +200,7 @@ class LLMWorker(QThread):
     tool_result_signal = Signal(dict)
     content_signal = Signal(str)
     agent_state_signal = Signal(dict) # Signal to report sub-agent status
+    abort_signal = Signal() # Signal emitted when the worker is stopped
 
     def __init__(self, messages, config_manager, workspace_dir=None, parent_agent_id=None):
         super().__init__()
@@ -229,6 +230,7 @@ class LLMWorker(QThread):
         self.is_stopped = True
         self.is_paused = False # Ensure loop breaks if paused
         self.step_signal.emit("System: Stopping...")
+        self.abort_signal.emit()
 
     def run(self):
         # Work on a copy of messages to handle multi-turn locally
@@ -473,7 +475,8 @@ class LLMWorker(QThread):
                                     "config_manager": self.config_manager,
                                     "skill_manager": self.skill_manager,
                                     "agent_state_signal": self.agent_state_signal,
-                                    "tool_call_id": tool.id
+                                    "tool_call_id": tool.id,
+                                    "abort_signal": self.abort_signal
                                 }
                             )
                             

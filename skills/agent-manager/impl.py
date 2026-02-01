@@ -24,6 +24,7 @@ def dispatch_agents(workspace_dir, tasks, _context=None):
     step_signal = _context.get('step_signal')
     agent_state_signal = _context.get('agent_state_signal')
     tool_call_id = _context.get('tool_call_id')
+    abort_signal = _context.get('abort_signal')
     
     if not config_manager:
         return "Error: ConfigManager not found in context."
@@ -146,7 +147,34 @@ def dispatch_agents(workspace_dir, tasks, _context=None):
             
     for worker in workers:
         worker.finished_signal.connect(on_finished)
+
+    # Handle Abort Signal from Parent
+    def on_abort():
+        step_signal.emit("Manager: Received stop signal. Terminating sub-agents...")
+        for w in workers:
+            if w.isRunning():
+                w.stop() # Set flags
+                w.quit() # Request thread exit
+                w.wait(100) # Wait briefly
+                if w.isRunning():
+                    w.terminate() # Force kill if needed
+        loop.quit()
         
+    if abort_signal:
+        # We need to connect signal. 
+        # Since abort_signal is a bound signal from another thread, direct connection is fine.
+        # But we need a QObject slot.
+        # Using a helper object to bridge.
+        class SignalBridge(QObject):
+            def __init__(self, callback):
+                super().__init__()
+                self.callback = callback
+            def trigger(self):
+                self.callback()
+        
+        bridge = SignalBridge(on_abort)
+        abort_signal.connect(bridge.trigger)
+
     if active_count > 0:
         loop.exec()
         

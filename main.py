@@ -2,6 +2,7 @@ import sys
 import subprocess
 import tempfile
 import os
+import time
 import ast
 import re
 import json
@@ -22,9 +23,9 @@ import shutil
 import qtawesome as qta
 from PySide6.QtGui import (QAction, QTextOption, QIcon, QFont, QFontMetrics, QPixmap, 
                           QDesktopServices, QGuiApplication, QColor, QPainter, 
-                          QBrush, QPainterPath, QTextCursor, QTextCharFormat)
+                          QBrush, QPainterPath, QTextCursor, QTextCharFormat, QPen)
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget, QToolButton, QFileSystemModel, QTreeView, QSplitter, QStackedWidget, QSizePolicy, QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QGridLayout)
+                               QHBoxLayout, QTextEdit, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog, QScrollArea, QFrame, QDialog, QFormLayout, QCheckBox, QGroupBox, QInputDialog, QMenu, QTabWidget, QToolButton, QFileSystemModel, QTreeView, QSplitter, QSplitterHandle, QStackedWidget, QSizePolicy, QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QGridLayout)
 from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QSize, QRect, QPoint, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QAbstractAnimation, QVariantAnimation
 
 # Try importing OpenAI
@@ -444,6 +445,58 @@ class SkillsCenterDialog(QDialog):
             else:
                 QMessageBox.warning(self, "失败", msg)
 
+class DragOverlay(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(False)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.hide()
+        
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+        
+        container = QFrame()
+        container.setStyleSheet(f"""
+            QFrame {{
+                background-color: {DesignTokens.bg_main};
+                border: 3px dashed {DesignTokens.primary};
+                border-radius: 24px;
+            }}
+        """)
+        container.setFixedSize(400, 300)
+        
+        # Shadow for the container
+        shadow = QGraphicsDropShadowEffect(container)
+        shadow.setBlurRadius(40)
+        shadow.setColor(QColor(0, 0, 0, 40))
+        shadow.setOffset(0, 10)
+        container.setGraphicsEffect(shadow)
+        
+        v_layout = QVBoxLayout(container)
+        v_layout.setAlignment(Qt.AlignCenter)
+        v_layout.setSpacing(20)
+        
+        icon = QLabel()
+        icon.setPixmap(qta.icon('fa5s.folder-open', color=DesignTokens.primary).pixmap(80, 80))
+        icon.setAlignment(Qt.AlignCenter)
+        
+        label = QLabel("松开鼠标以切换工作区")
+        label.setStyleSheet(f"color: {DesignTokens.primary}; font-size: 20px; font-weight: bold;")
+        label.setAlignment(Qt.AlignCenter)
+        
+        sub_label = QLabel("或者拖入文件以添加到输入框")
+        sub_label.setStyleSheet(f"color: {DesignTokens.text_secondary}; font-size: 14px;")
+        sub_label.setAlignment(Qt.AlignCenter)
+        
+        v_layout.addWidget(icon)
+        v_layout.addWidget(label)
+        v_layout.addWidget(sub_label)
+        
+        layout.addWidget(container)
+        
+        # Semi-transparent background
+        self.setStyleSheet("background-color: rgba(0, 0, 0, 0.4);")
+
 class AutoResizingLabel(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -860,30 +913,30 @@ class ChatBubble(QFrame):
             
             # Toggle Header
             self.think_toggle_btn = QPushButton(" 思考过程")
-            self.think_toggle_btn.setIcon(qta.icon('fa5s.lightbulb', color='#f59e0b'))
+            self.think_toggle_btn.setIcon(qta.icon('fa5s.lightbulb', color=DesignTokens.accent_tool))
             self.think_toggle_btn.setCursor(Qt.PointingHandCursor)
             self.think_toggle_btn.setCheckable(True)
             self.think_toggle_btn.setChecked(False)
-            self.think_toggle_btn.setStyleSheet("""
-                QPushButton {
+            self.think_toggle_btn.setStyleSheet(f"""
+                QPushButton {{
                     text-align: left;
-                    background-color: #ffffff;
-                    color: #6b7280;
-                    border: 1px solid #e5e7eb;
-                    border-radius: 18px;
+                    background-color: {DesignTokens.bg_main};
+                    color: {DesignTokens.text_secondary};
+                    border: 1px solid {DesignTokens.border};
+                    border-radius: 12px;
                     padding: 8px 16px;
                     font-size: 13px;
                     font-weight: 500;
-                    margin-bottom: 8px;
-                }
-                QPushButton:hover { background-color: #f9fafb; color: #4b5563; border-color: #d1d5db; }
-                QPushButton:checked { 
-                    background-color: #f8fafc; 
-                    color: #475569; 
-                    border-color: #cbd5e1; 
+                    margin-bottom: 0px; /* Reduced to connect with container */
+                }}
+                QPushButton:hover {{ background-color: {DesignTokens.bg_secondary}; color: {DesignTokens.text_primary}; border-color: {DesignTokens.border}; }}
+                QPushButton:checked {{ 
+                    background-color: {DesignTokens.bg_secondary}; 
+                    color: {DesignTokens.text_primary}; 
+                    border-color: {DesignTokens.border}; 
                     border-bottom-left-radius: 0; 
                     border-bottom-right-radius: 0; 
-                }
+                }}
             """)
             self.think_toggle_btn.toggled.connect(self.toggle_thinking)
             think_layout.addWidget(self.think_toggle_btn)
@@ -891,20 +944,27 @@ class ChatBubble(QFrame):
             # Container for Thinking Stream
             self.think_container = QWidget()
             self.think_container.setVisible(False)
-            self.think_container.setStyleSheet("""
-                QWidget {
-                    background: #f9fafb;
-                    border: 1px solid #e5e7eb;
+            self.think_container.setStyleSheet(f"""
+                QWidget {{
+                    background: {DesignTokens.bg_secondary};
+                    border: 1px solid {DesignTokens.border};
+                    border-left: 3px solid {DesignTokens.accent_ai};
                     border-top: none;
                     margin-top: -1px;
                     margin-left: 0px;
-                    border-bottom-left-radius: 18px;
-                    border-bottom-right-radius: 18px;
-                }
+                    border-bottom-left-radius: 12px;
+                    border-bottom-right-radius: 12px;
+                }}
             """)
             self.think_container_layout = QVBoxLayout(self.think_container)
             self.think_container_layout.setContentsMargins(12, 12, 12, 12)
             self.think_container_layout.setSpacing(8)
+            self.think_duration = 0.0 # Store duration
+            self.think_start_time = None
+            self.think_timer = QTimer(self)
+            self.think_timer.setInterval(100) # Update every 100ms
+            self.think_timer.timeout.connect(self._on_think_tick)
+            
             self._start_new_think_segment = False
             self._last_thinking_segment_text = ""
             self._strip_prefix = ""
@@ -916,6 +976,29 @@ class ChatBubble(QFrame):
             self.content_edit = AutoResizingTextEdit()
             self.content_edit.setStyleSheet("background: transparent; border: none; padding: 0;")
             col_layout.addWidget(self.content_edit)
+            
+            # 3. Sub-Agent Indicators
+            self.sub_agent_indicators = QWidget()
+            self.sub_agent_indicators.setVisible(False)
+            self.sub_agent_indicators_layout = QHBoxLayout(self.sub_agent_indicators)
+            self.sub_agent_indicators_layout.setContentsMargins(0, 0, 0, 0)
+            self.sub_agent_indicators_layout.setSpacing(8)
+            self.sub_agent_indicators_layout.setAlignment(Qt.AlignLeft)
+            col_layout.addWidget(self.sub_agent_indicators)
+            
+            # 4. Sub-Agent Logs (Hidden Drawer)
+            self.sub_agent_logs = QStackedWidget()
+            self.sub_agent_logs.setVisible(False)
+            self.sub_agent_logs.setStyleSheet(f"""
+                QStackedWidget {{
+                    background: {DesignTokens.bg_main};
+                    border: 1px solid {DesignTokens.border};
+                    border-radius: 8px;
+                }}
+            """)
+            col_layout.addWidget(self.sub_agent_logs)
+            
+            self.active_agent_logs = {} # agent_id -> QTextEdit
             
             # Handle Initial State
             if thinking == "...":
@@ -930,6 +1013,14 @@ class ChatBubble(QFrame):
                 
             main_layout.addWidget(content_col)
             # main_layout.addStretch() # Removed to allow content to take full width
+
+    def _on_think_tick(self):
+        if self.think_start_time is None: return
+        
+        elapsed = time.time() - self.think_start_time
+        current_total = self.think_duration + elapsed
+        
+        self.think_toggle_btn.setText(f" 深度思考 ({current_total:.1f}s)")
 
     def toggle_thinking(self, checked):
         # Animation for Folding
@@ -982,24 +1073,178 @@ class ChatBubble(QFrame):
             
         # Use Chevron or similar, but keep the Lightbulb fixed
         text = self.think_toggle_btn.text()
-        base_text = " 思考过程"
+        base_text = " 深度思考"
         
-        # If we have duration in text
-        if "(" in text:
-             parts = text.split("(")
-             duration_part = "(" + parts[1]
-             base_text = f" 思考过程 {duration_part}"
+        # Use stored duration if available
+        if hasattr(self, 'think_duration') and self.think_duration > 0:
+             base_text = f" 深度思考 ({self.think_duration:.1f}s)"
+        elif "(" in text:
+             # Fallback to parsing if duration not stored yet (legacy bubbles)
+             try:
+                 parts = text.split("(")
+                 duration_part = "(" + parts[1]
+                 base_text = f" 深度思考 {duration_part}"
+             except: pass
              
         if checked:
              self.think_toggle_btn.setText(base_text) # Maybe add arrow if needed, but styling shows state
         else:
              self.think_toggle_btn.setText(base_text)
+
+    # --- Sub-Agent PiP Methods ---
+    def add_sub_agent_indicator(self, agent_id, status="pending"):
+        if not hasattr(self, 'agent_indicators'):
+            self.agent_indicators = {}
+            
+        if agent_id in self.agent_indicators:
+            # Already exists, just update status
+            self.update_sub_agent_status_icon(agent_id, status)
+            return
+
+        # Create Indicator
+        indicator = QPushButton()
+        indicator.setFixedSize(24, 24)
+        indicator.setCursor(Qt.PointingHandCursor)
+        indicator.setToolTip(f"Agent: {agent_id} ({status})")
+        
+        # Style based on status
+        color = self._get_status_color(status)
+        indicator.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {DesignTokens.bg_secondary};
+                border: 1px solid {color};
+                border-radius: 12px;
+                color: {color};
+                font-size: 10px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {color};
+                color: white;
+            }}
+        """)
+        
+        # Simple initial or dot
+        initial = agent_id[0].upper() if agent_id else "?"
+        indicator.setText(initial)
+        
+        indicator.clicked.connect(lambda: self._toggle_sub_agent_log(agent_id))
+        
+        self.sub_agent_indicators_layout.addWidget(indicator)
+        
+        if not self.sub_agent_indicators.isVisible():
+            self.sub_agent_indicators.setVisible(True)
+            
+        # Create Log Viewer (Hidden)
+        self._create_log_viewer(agent_id)
+        
+        self.agent_indicators[agent_id] = indicator
+
+    def update_sub_agent_log(self, agent_id, content, status):
+        # Ensure exists
+        self.add_sub_agent_indicator(agent_id, status)
+        
+        # Update Log Content
+        if agent_id in self.active_agent_logs:
+            text_edit = self.active_agent_logs[agent_id]
+            
+            cursor = text_edit.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            
+            fmt = QTextCharFormat()
+            if status == "thinking":
+                fmt.setForeground(QColor(DesignTokens.accent_ai))
+                fmt.setFontItalic(True)
+            elif status == "tool_use":
+                fmt.setForeground(QColor(DesignTokens.accent_tool))
+            elif status == "completed":
+                fmt.setForeground(QColor(DesignTokens.success_text))
+            elif status == "error":
+                fmt.setForeground(QColor(DesignTokens.error_text))
+            else:
+                fmt.setForeground(QColor(DesignTokens.text_primary))
+                
+            cursor.insertText(content, fmt)
+            text_edit.setTextCursor(cursor)
+            text_edit.ensureCursorVisible()
+            
+        # Update Status Icon
+        self.update_sub_agent_status_icon(agent_id, status)
+
+    def update_sub_agent_status_icon(self, agent_id, status):
+        if hasattr(self, 'agent_indicators') and agent_id in self.agent_indicators:
+            indicator = self.agent_indicators[agent_id]
+            color = self._get_status_color(status)
+            indicator.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {DesignTokens.bg_secondary};
+                    border: 1px solid {color};
+                    border-radius: 12px;
+                    color: {color};
+                    font-size: 10px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background-color: {color};
+                    color: white;
+                }}
+            """)
+            indicator.setToolTip(f"Agent: {agent_id} ({status})")
+
+    def _get_status_color(self, status):
+        if status in ["active", "thinking"]: return DesignTokens.accent_ai
+        if status == "completed": return DesignTokens.success_text
+        if status == "error": return DesignTokens.error_text
+        if status == "tool_use": return DesignTokens.accent_tool
+        return DesignTokens.text_tertiary
+
+    def _create_log_viewer(self, agent_id):
+        text_edit = AutoResizingTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                border: none;
+                padding: 8px;
+                background: transparent;
+                font-family: 'Consolas', monospace;
+                font-size: 11px;
+                color: {DesignTokens.text_secondary};
+            }}
+        """)
+        
+        self.sub_agent_logs.addWidget(text_edit)
+        self.active_agent_logs[agent_id] = text_edit
+
+    def _toggle_sub_agent_log(self, agent_id):
+        if agent_id not in self.active_agent_logs: return
+        
+        target_log = self.active_agent_logs[agent_id]
+        
+        if not self.sub_agent_logs.isVisible():
+            self.sub_agent_logs.setCurrentWidget(target_log)
+            self.sub_agent_logs.setVisible(True)
+        else:
+            if self.sub_agent_logs.currentWidget() == target_log:
+                self.sub_agent_logs.setVisible(False)
+            else:
+                self.sub_agent_logs.setCurrentWidget(target_log)
+                target_log.ensureCursorVisible() # Ensure scrolled to bottom
         
     def set_thinking_state(self, is_thinking):
         if is_thinking:
-            self.think_toggle_btn.setText(" 思考中…")
+            if not self.think_timer.isActive():
+                self.think_start_time = time.time()
+                self.think_timer.start()
+                
+            self.think_toggle_btn.setText(f" 深度思考 ({self.think_duration:.1f}s)")
             self.think_toggle_btn.setChecked(True)
             self.thinking_widget.setVisible(True)
+        else:
+            if self.think_timer.isActive():
+                self.think_timer.stop()
+                if self.think_start_time:
+                    self.think_duration += time.time() - self.think_start_time
+                    self.think_start_time = None
 
     def get_active_think_widget(self, force_new=False):
         if not force_new:
@@ -1023,9 +1268,14 @@ class ChatBubble(QFrame):
             widget.setText(current + text)
         
         if duration:
-            self.think_toggle_btn.setText(f" 深度思考 ({duration:.1f}s)")
+            self.think_duration = duration
         
         if is_final:
+            if self.think_timer.isActive():
+                self.think_timer.stop()
+                self.think_start_time = None
+                
+            self.think_toggle_btn.setText(f" 深度思考 ({self.think_duration:.1f}s)")
             self.think_toggle_btn.setChecked(False) # Collapse by default when done
             
     def set_main_content(self, text):
@@ -1129,12 +1379,13 @@ class ToolCallCard(QFrame):
         self.setFocusPolicy(Qt.StrongFocus)
         
         self.setFrameShape(QFrame.NoFrame)
-        # Minimalist "List Item" Style
+        # Timeline "Step" Style
         self.setStyleSheet("""
             ToolCallCard {
                 background-color: transparent;
                 border: none;
-                margin: 2px 0;
+                margin: 0;
+                padding-left: 10px; /* Space for timeline line if we want to draw it externally, or just indent */
             }
         """)
         
@@ -1142,30 +1393,27 @@ class ToolCallCard(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
-        # --- Main Row Container (The "List Item") ---
+        # --- Main Row Container (The "Timeline Node") ---
         self.main_row = QFrame()
         self.main_row.setCursor(Qt.PointingHandCursor)
         self.main_row.setStyleSheet(f"""
             QFrame {{
-                background-color: {DesignTokens.bg_main};
-                border: 1px solid {DesignTokens.border};
-                border-left: 3px solid {DesignTokens.text_tertiary};
+                background-color: transparent;
                 border-radius: 6px;
+                padding: 4px;
             }}
             QFrame:hover {{
                 background-color: {DesignTokens.bg_secondary};
-                border-color: {DesignTokens.text_secondary};
-                border-left-color: {DesignTokens.text_secondary};
             }}
         """)
         # Make the whole card clickable
         self.main_row.mousePressEvent = self.on_card_clicked
         
         row_layout = QHBoxLayout(self.main_row)
-        row_layout.setContentsMargins(12, 10, 12, 10)
+        row_layout.setContentsMargins(4, 4, 4, 4)
         row_layout.setSpacing(12)
         
-        # 1. Icon Area 
+        # 1. Icon Area (Timeline Dot)
         tool_icons = {
             "list_files": "fa5s.folder", "read_file": "fa5s.book-open", "write_file": "fa5s.pen-alt",
             "update_file": "fa5s.pen", "delete_file": "fa5s.trash-alt", "run_command": "fa5s.terminal",
@@ -1176,13 +1424,13 @@ class ToolCallCard(QFrame):
         
         # Icon with base
         self.icon_label = QLabel()
-        self.icon_label.setPixmap(qta.icon(icon_name, color=DesignTokens.text_secondary).pixmap(16, 16))
-        self.icon_label.setFixedSize(28, 28)
+        self.icon_label.setPixmap(qta.icon(icon_name, color=DesignTokens.accent_tool).pixmap(14, 14))
+        self.icon_label.setFixedSize(24, 24)
         self.icon_label.setAlignment(Qt.AlignCenter)
         self.icon_label.setStyleSheet(f"""
             background-color: {DesignTokens.bg_secondary};
-            color: {DesignTokens.text_secondary};
-            border-radius: 14px; 
+            border: 1px solid {DesignTokens.border};
+            border-radius: 12px; 
         """)
         
         # 2. Text Content
@@ -1198,10 +1446,10 @@ class ToolCallCard(QFrame):
         
         # Subtitle (Short Args Summary)
         short_args = str(args)
-        if len(short_args) > 60:
-            short_args = short_args[:60] + "..."
+        if len(short_args) > 80:
+            short_args = short_args[:80] + "..."
         args_preview = QLabel(short_args)
-        args_preview.setStyleSheet(f"color: {DesignTokens.text_secondary}; font-size: 11px; border: none;")
+        args_preview.setStyleSheet(f"color: {DesignTokens.text_secondary}; font-size: 11px; border: none; font-family: 'Consolas', monospace;")
         
         text_layout.addWidget(name_label)
         text_layout.addWidget(args_preview)
@@ -1211,21 +1459,20 @@ class ToolCallCard(QFrame):
         self.status_icon.setPixmap(qta.icon('fa5s.spinner', color=DesignTokens.text_secondary, animation=qta.Spin(self.status_icon)).pixmap(14, 14))
         self.status_icon.setStyleSheet("border: none; background: transparent;")
         
-        self.view_btn = QPushButton("查看")
+        self.view_btn = QPushButton("详情") # Minimalist text
         self.view_btn.setCursor(Qt.PointingHandCursor)
-        self.view_btn.setFixedWidth(40)
-        self.view_btn.setToolTip("在右侧查看详情")
+        self.view_btn.setFixedWidth(36)
+        self.view_btn.setToolTip("查看详情")
         self.view_btn.setStyleSheet(f"""
             QPushButton {{
                 border: none;
                 border-radius: 4px;
-                background: {DesignTokens.bg_secondary};
-                color: {DesignTokens.text_secondary};
+                color: {DesignTokens.text_tertiary};
                 font-size: 11px;
             }}
             QPushButton:hover {{
                 color: {DesignTokens.primary};
-                background: #eff6ff;
+                background: {DesignTokens.bg_secondary};
             }}
         """)
         self.view_btn.clicked.connect(lambda: self.clicked.emit(self.tool_id, str(self.args), str(self.result)))
@@ -1575,6 +1822,130 @@ class SessionState:
         self.displayed_count = 0
         self.load_more_btn = None
 
+class SmartSplitterHandle(QSplitterHandle):
+    def __init__(self, orientation, parent):
+        super().__init__(orientation, parent)
+
+    def mouseDoubleClickEvent(self, event):
+        # Reset to default sizes on double click
+        if self.splitter():
+            self.splitter().on_handle_double_clicked(self)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if self.splitter():
+            self.splitter().check_auto_collapse()
+
+class SmartSplitter(QSplitter):
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setHandleWidth(1) # Visual width is 1px via CSS, but we keep this consistent
+        
+        # Default Stylesheet for Handles
+        base_style = """
+            QSplitter::handle { 
+                background-color: #e5e7eb; 
+                margin: 0 4px; 
+            } 
+            QSplitter::handle:hover { 
+                background-color: #3b82f6; 
+            }
+        """
+        if orientation == Qt.Horizontal:
+            # Horizontal handles have vertical margin/padding in some contexts, but here margin 0 4px is for horizontal spacing?
+            # Actually for horizontal splitter, handle is vertical bar.
+            # margin: 0 4px means top/bottom 0, left/right 4px? No.
+            # In Qt SS, margin is usually external.
+            # Let's use the user provided CSS which was known good.
+            self.setStyleSheet("""
+                QSplitter::handle:horizontal { 
+                    background-color: #e5e7eb; 
+                    width: 1px; 
+                    margin: 0 4px; 
+                } 
+                QSplitter::handle:horizontal:hover { 
+                    background-color: #3b82f6; 
+                }
+                QSplitter::handle:vertical { 
+                    background-color: #e5e7eb; 
+                    height: 1px; 
+                    margin: 4px 0; 
+                } 
+                QSplitter::handle:vertical:hover { 
+                    background-color: #3b82f6; 
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                QSplitter::handle:vertical { 
+                    background-color: #e5e7eb; 
+                    height: 1px; 
+                    margin: 4px 0; 
+                } 
+                QSplitter::handle:vertical:hover { 
+                    background-color: #3b82f6; 
+                }
+            """)
+
+    def createHandle(self):
+        return SmartSplitterHandle(self.orientation(), self)
+
+    def on_handle_double_clicked(self, handle):
+        # Find which handle was clicked
+        idx = -1
+        for i in range(1, self.count()):
+            if self.handle(i) == handle:
+                idx = i
+                break
+        
+        if idx == -1:
+            return
+
+        sizes = self.sizes()
+        if self.orientation() == Qt.Horizontal:
+            # Assuming 3-column layout: [Sidebar, Main, RightSidebar]
+            # Handle 1: Between Sidebar (0) and Main (1)
+            if idx == 1: 
+                target_width = 260
+                if len(sizes) > 1:
+                    current_w = sizes[0]
+                    diff = target_width - current_w
+                    sizes[0] = target_width
+                    sizes[1] -= diff
+            # Handle 2: Between Main (1) and RightSidebar (2)
+            elif idx == 2:
+                target_width = 280
+                if len(sizes) > 2:
+                    current_w = sizes[2]
+                    diff = target_width - current_w
+                    sizes[2] = target_width
+                    sizes[1] -= diff
+        else:
+            # Vertical Splitter (Workspace)
+            # Default ratio 2:1
+            total = sum(sizes)
+            target_h1 = int(total * 0.66)
+            target_h2 = total - target_h1
+            sizes = [target_h1, target_h2]
+            
+        self.setSizes(sizes)
+
+    def check_auto_collapse(self):
+        if self.orientation() == Qt.Horizontal:
+            sizes = self.sizes()
+            # Left sidebar (index 0)
+            if len(sizes) > 0 and sizes[0] < 50 and sizes[0] > 0:
+                sizes[1] += sizes[0]
+                sizes[0] = 0
+                self.setSizes(sizes)
+            
+            # Right sidebar (index 2)
+            if len(sizes) > 2:
+                if sizes[2] < 50 and sizes[2] > 0:
+                    sizes[1] += sizes[2]
+                    sizes[2] = 0
+                    self.setSizes(sizes)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1693,30 +2064,31 @@ class MainWindow(QMainWindow):
         self.config_manager = ConfigManager()
         self.skill_manager = SkillManager(None, self.config_manager)
         self.skill_generator = SkillGenerator(self.config_manager)
+        
+        # Animation Throttling
+        self.last_message_time = 0
 
         # Connect to Interaction Bridge
         bridge.request_confirmation_signal.connect(self.handle_confirmation_request)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        root_layout = QHBoxLayout(central_widget)
+        root_layout = QVBoxLayout(central_widget)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
+        
+        self.main_splitter = SmartSplitter(Qt.Horizontal)
+        root_layout.addWidget(self.main_splitter)
 
         # --- Sidebar ---
         sidebar = QWidget()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(260)
+        # sidebar.setMinimumWidth(200) # Removed to allow collapsing
         # sidebar.setStyleSheet("background-color: #f9fafb; border-right: 1px solid #e5e7eb;")
-        sidebar.setStyleSheet(f"background-color: #ffffff; border-right: 1px solid {DesignTokens.border};")
+        sidebar.setStyleSheet(f"background-color: {DesignTokens.bg_secondary}; border-right: 1px solid {DesignTokens.border};")
         
-        # Add shadow effect
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(0, 0, 0, 15))
-        shadow.setOffset(4, 0)
-        sidebar.setGraphicsEffect(shadow)
-        sidebar.raise_()
+        # Lower sidebar weight: Removed shadow
+        # sidebar.setGraphicsEffect(None) 
 
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(16, 24, 16, 24)
@@ -1784,16 +2156,17 @@ class MainWindow(QMainWindow):
         sidebar_skills_btn.clicked.connect(self.open_skills_center)
         sidebar_layout.addWidget(sidebar_skills_btn)
 
-        root_layout.addWidget(sidebar)
+        self.main_splitter.addWidget(sidebar)
 
         # --- Main Content ---
         main_container = QWidget()
         main_container.setObjectName("MainContainer")
-        root_layout.addWidget(main_container, 1)
+        main_container.setMinimumWidth(400) # Protect main content
+        self.main_splitter.addWidget(main_container)
 
         # Right Sidebar (Workspace File Tree)
         self.right_sidebar = QWidget()
-        self.right_sidebar.setFixedWidth(280)
+        # self.right_sidebar.setMinimumWidth(200) # Removed to allow collapsing
         self.right_sidebar.setStyleSheet("background-color: #ffffff; border-left: 1px solid #e5e7eb;")
         self.right_sidebar.setVisible(False)
         
@@ -1828,6 +2201,8 @@ class MainWindow(QMainWindow):
         ws_tab_layout.setContentsMargins(0, 0, 0, 0)
         ws_tab_layout.setSpacing(0)
         
+        self.right_inner_splitter = SmartSplitter(Qt.Vertical)
+        
         self.file_model = QFileSystemModel()
         self.file_model.setRootPath("") 
         
@@ -1844,12 +2219,18 @@ class MainWindow(QMainWindow):
         self.file_tree.clicked.connect(self.on_file_clicked)
         self.file_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.file_tree.customContextMenuRequested.connect(self.show_file_context_menu)
-        ws_tab_layout.addWidget(self.file_tree, 2)
+        
+        self.right_inner_splitter.addWidget(self.file_tree)
         
         # Preview Area in Workspace Tab
+        preview_container = QWidget()
+        preview_layout = QVBoxLayout(preview_container)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        preview_layout.setSpacing(0)
+        
         r_preview_header = QLabel("  内容预览")
         r_preview_header.setStyleSheet("font-weight: 600; color: #4b5563; padding: 8px 12px; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; background: #f9fafb;")
-        ws_tab_layout.addWidget(r_preview_header)
+        preview_layout.addWidget(r_preview_header)
         
         self.preview_stack = QStackedWidget()
         self.preview_text = ReadOnlyTextEdit()
@@ -1862,7 +2243,14 @@ class MainWindow(QMainWindow):
         self.preview_stack.addWidget(self.preview_image)
         self.preview_stack.setCurrentWidget(self.preview_text)
         self.preview_pixmap = None
-        ws_tab_layout.addWidget(self.preview_stack, 1)
+        
+        preview_layout.addWidget(self.preview_stack)
+        
+        self.right_inner_splitter.addWidget(preview_container)
+        self.right_inner_splitter.setStretchFactor(0, 2)
+        self.right_inner_splitter.setStretchFactor(1, 1)
+        
+        ws_tab_layout.addWidget(self.right_inner_splitter)
         
         self.right_tabs.addTab(self.workspace_tab, "工作区文件")
         
@@ -1928,7 +2316,13 @@ class MainWindow(QMainWindow):
         
         right_layout.addWidget(self.right_tabs)
         
-        root_layout.addWidget(self.right_sidebar)
+        self.main_splitter.addWidget(self.right_sidebar)
+        self.main_splitter.setStretchFactor(0, 0)
+        self.main_splitter.setStretchFactor(1, 1)
+        self.main_splitter.setStretchFactor(2, 0)
+        
+        # Set Initial Sizes (Sidebar: 260, Main: Flexible, Right: 280)
+        self.main_splitter.setSizes([260, 800, 280])
 
         # Main Layout Construction
         layout = QVBoxLayout(main_container)
@@ -2043,6 +2437,79 @@ class MainWindow(QMainWindow):
         self.create_new_session()
         self.refresh_history_list()
         self.load_default_workspace()
+        
+        # Initialize Drag Overlay
+        self.drag_overlay = DragOverlay(self)
+        self.drag_overlay.resize(self.size())
+        
+        # Update UI state based on workspace
+        self.update_ui_state_for_workspace()
+
+    def update_ui_state_for_workspace(self):
+        if self.workspace_dir:
+            self.input_field.setEnabled(True)
+            self.input_field.setPlaceholderText("例如：把这个文件夹里的图片按日期分类")
+            self.action_btn.setEnabled(True)
+            self.action_btn.setGraphicsEffect(None) # Remove opacity effect
+            self.ws_label.setStyleSheet(f"color: {DesignTokens.success_text}; font-weight: 600;")
+        else:
+            # Keep input enabled but change placeholder to guide user
+            self.input_field.setPlaceholderText("📁 先选择或拖拽一个文件夹到这里...")
+            # Disable send button
+            self.action_btn.setEnabled(False)
+            
+            # Opacity effect for disabled button look
+            opacity = QGraphicsOpacityEffect(self.action_btn)
+            opacity.setOpacity(0.5)
+            self.action_btn.setGraphicsEffect(opacity)
+            
+            self.ws_label.setStyleSheet(f"color: {DesignTokens.text_secondary}; font-weight: 500;")
+            
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'drag_overlay'):
+            self.drag_overlay.resize(self.size())
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            if hasattr(self, 'drag_overlay'):
+                self.drag_overlay.show()
+                self.drag_overlay.raise_()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        if hasattr(self, 'drag_overlay'):
+            self.drag_overlay.hide()
+
+    def dropEvent(self, event):
+        if hasattr(self, 'drag_overlay'):
+            self.drag_overlay.hide()
+            
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if not urls: return
+            
+            path = urls[0].toLocalFile()
+            if os.path.isdir(path):
+                # Switch workspace
+                self.load_workspace(path)
+            else:
+                # Add file path to input or load parent workspace if none
+                if self.workspace_dir:
+                    current_text = self.input_field.toPlainText()
+                    if current_text:
+                        self.input_field.setText(current_text + " " + path)
+                    else:
+                        self.input_field.setText(path)
+                else:
+                    # No workspace selected, load parent dir
+                    parent_dir = os.path.dirname(path)
+                    self.load_workspace(parent_dir)
+                    self.input_field.setText(path)
+            
+            event.acceptProposedAction()
 
     # --- Session & Logic Methods (No changes to logic, only UI wrappers) ---
     def get_current_session(self):
@@ -2451,9 +2918,23 @@ class MainWindow(QMainWindow):
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
-            event.acceptProposedAction()
+            # Check if it's a folder
+            urls = event.mimeData().urls()
+            if urls and urls[0].isLocalFile():
+                if hasattr(self, 'drag_overlay'):
+                    self.drag_overlay.show()
+                    self.drag_overlay.raise_()
+                event.acceptProposedAction()
+    
+    def dragLeaveEvent(self, event):
+        if hasattr(self, 'drag_overlay'):
+            self.drag_overlay.hide()
+        super().dragLeaveEvent(event)
             
     def dropEvent(self, event):
+        if hasattr(self, 'drag_overlay'):
+            self.drag_overlay.hide()
+            
         urls = event.mimeData().urls()
         if not urls:
             return
@@ -2497,8 +2978,8 @@ class MainWindow(QMainWindow):
         display_path = font_metrics.elidedText(directory, Qt.ElideMiddle, 400)
         self.ws_label.setText(f"当前工作区: {display_path}")
         self.ws_label.setToolTip(directory)
-        self.ws_label.setStyleSheet("color: #059669; font-weight: 600;")
         self.update_recent_workspaces(directory)
+        self.update_ui_state_for_workspace()
         
         if hasattr(self, 'file_model'):
             self.file_model.setRootPath(directory)
@@ -2808,6 +3289,13 @@ class MainWindow(QMainWindow):
         if state.empty_state and state.empty_state.isVisible():
             state.empty_state.setVisible(False)
             
+        # Throttling Animation
+        import time
+        now = time.time()
+        if animate and self.last_message_time and (now - self.last_message_time) < 0.5:
+            animate = False
+        self.last_message_time = now
+            
         bubble = ChatBubble(role, text, thinking, duration)
         
         # Animation: Fade + Slide
@@ -2898,12 +3386,12 @@ class MainWindow(QMainWindow):
             card = state.tool_cards[tool_call_id]
             card.update_agent_state(data)
 
-        # Update Sub-Agent Monitor
+        # Update Sub-Agent Monitor (PiP in ChatBubble)
         if session_id == self.current_session_id:
             agent_id = data.get("agent_id")
             status = data.get("status")
             
-            if agent_id:
+            if agent_id and state.last_agent_bubble:
                 content = None
                 if status == "thinking":
                     content = data.get("reasoning_delta")
@@ -2912,25 +3400,18 @@ class MainWindow(QMainWindow):
                 elif status == "tool_use":
                     content = data.get("task")
                 elif status == "pending":
-                    content = f"Task: {data.get('task')}"
+                    content = f"Task: {data.get('task')}\n"
                 elif status == "completed":
-                    content = "Done"
+                    content = "\nDone."
                     
                 if content or status in ["completed", "pending"]:
-                    # Lazy init monitor window
-                    if not self.sub_agent_monitor_window:
-                        self.sub_agent_monitor_window = SubAgentMonitorWindow(self)
-                    
-                    self.sub_agent_monitor_window.monitor.update_log(agent_id, content, status)
-
-                # Auto show monitor window if active/thinking/pending
-                if status in ["active", "thinking", "pending", "tool_use"]:
-                     if not self.sub_agent_monitor_window:
-                        self.sub_agent_monitor_window = SubAgentMonitorWindow(self)
-                     
-                     if not self.sub_agent_monitor_window.isVisible():
-                         self.sub_agent_monitor_window.show()
-                         self.sub_agent_monitor_window.raise_()
+                    # Update log in bubble
+                    if hasattr(state.last_agent_bubble, 'update_sub_agent_log'):
+                        state.last_agent_bubble.update_sub_agent_log(agent_id, content, status)
+                
+                # Update indicator status
+                if hasattr(state.last_agent_bubble, 'add_sub_agent_indicator'):
+                    state.last_agent_bubble.add_sub_agent_indicator(agent_id, status)
 
     def handle_content_signal(self, text, session_id=None):
         state = self.get_session(session_id)

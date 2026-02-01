@@ -19,13 +19,19 @@ class DesignTokens:
     # Borders & Backgrounds
     border = "#e5e7eb" # Gray 200
     bg_main = "#ffffff"
-    bg_secondary = "#f9fafb" # Gray 50
+    bg_secondary = "#f6f8fa" # GitHub Sidebar Gray
     
     # Shadows
     shadow_sidebar = "2px 0 8px rgba(0,0,0,0.04)"
     shadow_card = "0 1px 3px rgba(0,0,0,0.1)"
 
     # Semantic Colors (Success, Error, Warning, Info)
+    # Functional Accents
+    accent_ai = "#4d6bfe"      # AI 相关的强调色（思考气泡、AI头像）
+    accent_user = "#4b5563"    # 用户标识色
+    accent_success = "#10b981" # 成功/完成
+    accent_tool = "#f59e0b"    # 工具调用高亮
+
     # Success
     success_bg = "#f0fdf4"
     success_text = "#166534"
