@@ -200,6 +200,7 @@ class LLMWorker(QThread):
     tool_call_signal = Signal(dict)
     tool_result_signal = Signal(dict)
     content_signal = Signal(str)
+    output_signal = Signal(str) # For generic output/errors
     agent_state_signal = Signal(dict) # Signal to report sub-agent status
     abort_signal = Signal() # Signal emitted when the worker is stopped
 
