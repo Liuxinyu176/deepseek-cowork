@@ -7,7 +7,7 @@ import importlib.util
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Load module dynamically because of hyphen in name
-spec = importlib.util.spec_from_file_location("impl", os.path.join(os.path.dirname(__file__), '../skills/office-suite/impl.py'))
+spec = importlib.util.spec_from_file_location("impl", os.path.join(os.path.dirname(__file__), '../skills/file-system/impl.py'))
 impl = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(impl)
 
@@ -23,8 +23,9 @@ def test_office_skill():
     print("Testing DOCX...")
     res = impl.write_docx(workspace_dir, "test.docx", "Hello World\nThis is a test.")
     print(f"Write DOCX: {res}")
-    content = impl.read_docx(workspace_dir, "test.docx")
-    print(f"Read DOCX: {content}")
+    # Unified read
+    content = impl.read_file(workspace_dir, "test.docx")
+    print(f"Read DOCX (via read_file): {content}")
     assert "Hello World" in content
     
     # 2. PPTX
@@ -32,8 +33,9 @@ def test_office_skill():
     slides = [{"title": "Title 1", "content": "Content 1"}, {"title": "Title 2", "content": "Content 2"}]
     res = impl.create_pptx(workspace_dir, "test.pptx", slides)
     print(f"Create PPTX: {res}")
-    content = impl.read_pptx(workspace_dir, "test.pptx")
-    print(f"Read PPTX: {content}")
+    # Unified read
+    content = impl.read_file(workspace_dir, "test.pptx")
+    print(f"Read PPTX (via read_file): {content}")
     assert "Title 1" in content
     
     # 3. Excel
@@ -41,9 +43,19 @@ def test_office_skill():
     data = [["Name", "Age"], ["Alice", 30], ["Bob", 25]]
     res = impl.write_excel(workspace_dir, "test.xlsx", data)
     print(f"Write Excel: {res}")
-    content = impl.read_excel(workspace_dir, "test.xlsx")
-    print(f"Read Excel: \n{content}")
+    # Unified read
+    content = impl.read_file(workspace_dir, "test.xlsx")
+    print(f"Read Excel (via read_file): \n{content}")
     assert "Alice" in content
+
+    # 4. Plain Text
+    print("\nTesting Plain Text...")
+    txt_path = os.path.join(workspace_dir, "test.txt")
+    with open(txt_path, 'w') as f:
+        f.write("Just some text")
+    content = impl.read_file(workspace_dir, "test.txt")
+    print(f"Read Text (via read_file): {content}")
+    assert "Just some text" in content
     
     # Cleanup
     # shutil.rmtree(workspace_dir)

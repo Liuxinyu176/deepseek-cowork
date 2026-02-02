@@ -29,14 +29,21 @@ class OpenAIProvider(LLMProvider):
             # Prepare tools
             api_tools = tools if tools else None
             
-            stream = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=clean_messages,
-                tools=api_tools,
-                stream=True
-            )
+            # Common params
+            params = {
+                "model": self.model_name,
+                "messages": clean_messages,
+                "stream": True
+            }
+            if api_tools:
+                params["tools"] = api_tools
+
+            stream = self.client.chat.completions.create(**params)
 
             for chunk in stream:
+                if not chunk.choices:
+                    continue
+                    
                 delta = chunk.choices[0].delta
                 
                 # 1. Reasoning (DeepSeek style)
@@ -81,6 +88,36 @@ class OpenAIProvider(LLMProvider):
             if "tool_calls" in m and not m["tool_calls"]:
                 del m["tool_calls"]
                 
+            clean.append(m)
+        return clean
+
+class MoonshotProvider(OpenAIProvider):
+    """
+    Optimized Provider for Moonshot AI (Kimi 2.5)
+    Reference: https://platform.moonshot.cn/docs/guide/use-kimi-api-to-complete-tool-calls
+    """
+    def __init__(self, api_key, base_url, model_name):
+        # Ensure correct Base URL if user selects 'moonshot' but leaves default URL
+        if not base_url or "api.openai.com" in base_url:
+            base_url = "https://api.moonshot.cn/v1"
+        super().__init__(api_key, base_url, model_name)
+
+    def _prepare_messages(self, messages):
+        clean = []
+        for msg in messages:
+            m = msg.copy()
+            # Moonshot strictly does not support 'reasoning_content' or 'reasoning' fields
+            m.pop("reasoning", None)
+            m.pop("reasoning_content", None)
+            
+            # Kimi requires strictly valid tool_calls
+            if "tool_calls" in m and not m["tool_calls"]:
+                del m["tool_calls"]
+                
+            # Filter out empty content if tool_calls are present (Standard OpenAI allows it, but being explicit is safer)
+            if m.get("role") == "assistant" and "tool_calls" in m and not m.get("content"):
+                m["content"] = None # OpenAI SDK handles None as null, which is valid when tool_calls exist
+
             clean.append(m)
         return clean
 

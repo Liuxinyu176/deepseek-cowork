@@ -1,4 +1,4 @@
-from .providers import OpenAIProvider, AnthropicProvider
+from .providers import OpenAIProvider, AnthropicProvider, MoonshotProvider
 
 class LLMFactory:
     @staticmethod
@@ -13,5 +13,7 @@ class LLMFactory:
 
         if provider_type == "anthropic":
             return AnthropicProvider(api_key, base_url, model_name)
+        elif provider_type in ["moonshot", "kimi"]:
+            return MoonshotProvider(api_key, base_url, model_name)
         else:
             return OpenAIProvider(api_key, base_url, model_name)

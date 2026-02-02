@@ -310,15 +310,7 @@ def get_tech_stylesheet(theme="dark"):
 
 def apply_theme(app, theme="auto"):
     # Determine mode for our palette
-    mode = theme
-    if theme == "auto":
-        # Check system (Qt6 specific)
-        # User requested to disable dark mode detection for now as it may conflict with custom styling
-        mode = "light" 
-        # from PySide6.QtGui import QGuiApplication
-        # if hasattr(QGuiApplication.styleHints(), "colorScheme"):
-        #     if QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark:
-        #         mode = "dark"
+    mode = "light" # User requested to completely disable dark mode, independent of system settings
     
     # 1. Load qdarktheme base
     base_sheet = qdarktheme.load_stylesheet(mode)

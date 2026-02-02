@@ -252,6 +252,11 @@ class LLMWorker(QThread):
             "2. 当你发现某个任务可能在未来被再次使用，或者通过代码实现比通过纯文本生成更可靠时，请果断创建技能。",
             "3. 不要受到过度限制，灵活运用技能来增强你的能力。",
             "",
+            "策略 [自我进化]:",
+            "1. 你拥有 'update_experience' 工具，用于记录重要的经验教训、配置偏好或特定的工具使用技巧。",
+            "2. 当你成功解决一个难题、发现某个工具的最佳实践或遇到并修复了错误时，请务必使用 'update_experience' 记录下来。",
+            "3. 这些经验将在未来类似场景中自动注入，帮助你变得更聪明。",
+            "",
             "策略 [交互]: 如果你需要向用户提问或获取确认（例如：删除文件、澄清需求或下一步操作），你必须使用 'ask_user_confirmation' 工具。",
             "不要在文本回复中直接提问。文本回复仅用于展示推理过程和最终答案。请使用工具来触发弹出对话框。",
             "",
@@ -262,6 +267,11 @@ class LLMWorker(QThread):
         ]
         if self.parent_agent_id:
             context_lines.append(f"Note: You are a sub-agent (ID: {self.parent_agent_id}). Perform your assigned task efficiently.")
+
+        # Append Skill-Specific Prompts (e.g. usage guidelines, learned experiences)
+        if self.skill_manager.skill_prompts:
+            context_lines.append("\n# Skill Capabilities & Guidelines")
+            context_lines.extend(self.skill_manager.skill_prompts)
 
         system_prompt = "\n".join(context_lines)
         

@@ -610,8 +610,8 @@ class AutoResizingInputEdit(QTextEdit):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setFrameStyle(QFrame.NoFrame)
         self.textChanged.connect(self.adjustHeight)
-        self.setFixedHeight(45) # Initial height
-        self.min_height = 45
+        self.setFixedHeight(40) # Initial height
+        self.min_height = 40
         self.max_height = 150
         self.anim = None
         
@@ -741,29 +741,65 @@ class EmptyStateWidget(QWidget):
         title.setAlignment(Qt.AlignCenter)
         
         # Grid
-        grid_widget = QWidget()
-        grid = QGridLayout(grid_widget)
-        grid.setSpacing(24) # Increase spacing
+        self.grid_widget = QWidget()
+        self.grid_layout = QGridLayout(self.grid_widget)
+        self.grid_layout.setSpacing(24) # Increase spacing
         
-        actions = [
+        self.actions_data = [
             ("📁 整理文件", "按类型自动分类", "帮我把当前目录下的文件按类型分类整理"),
             ("🖼️ 处理图片", "批量重命名/压缩", "帮我把所有图片重命名为日期格式"),
             ("🔍 代码搜索", "在项目中查找内容", "搜索当前项目中关于 'TODO' 的代码"),
             ("📊 生成报告", "分析目录结构", "分析当前目录结构并生成一份报告")
         ]
         
-        for i, (text, desc, prompt) in enumerate(actions):
+        self.action_cards = []
+        for text, desc, prompt in self.actions_data:
             btn = self.create_action_card(text, desc, prompt)
-            grid.addWidget(btn, i // 2, i % 2)
+            self.action_cards.append(btn)
             
         layout.addStretch()
         layout.addWidget(icon)
         layout.addSpacing(24)
         layout.addWidget(title)
         layout.addSpacing(40)
-        layout.addWidget(grid_widget)
+        layout.addWidget(self.grid_widget)
         layout.addStretch()
         
+        # Initial layout
+        self.reflow_cards()
+        
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.reflow_cards()
+        
+    def reflow_cards(self):
+        # Calculate columns based on width
+        # Card min width ~260, spacing 24
+        w = self.width()
+        if w > 1100:
+            cols = 4
+        elif w > 600:
+            cols = 2
+        else:
+            cols = 1
+            
+        # Prevent infinite resize loops by only reflowing when column count changes
+        if hasattr(self, 'current_cols') and self.current_cols == cols:
+            return
+            
+        self.current_cols = cols
+        
+        # Clear grid but keep widgets
+        while self.grid_layout.count():
+            item = self.grid_layout.takeAt(0)
+            # Don't delete widget, just remove from layout
+            if item.widget():
+                item.widget().setParent(None)
+            
+        # Re-add to grid
+        for i, btn in enumerate(self.action_cards):
+            self.grid_layout.addWidget(btn, i // cols, i % cols)
+            
     def create_action_card(self, title, desc, prompt):
         btn = QPushButton()
         btn.setCursor(Qt.PointingHandCursor)
@@ -1995,7 +2031,7 @@ class MainWindow(QMainWindow):
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
             
-        self.resize(1100, 800)
+        self.resize(1280, 720)
         self.setAcceptDrops(True)
         self.workspace_dir = None
         
