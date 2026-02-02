@@ -2,43 +2,40 @@
 
 [中文文档](README_CN.md) | [English](README.md)
 
-DeepSeek Cowork is a powerful desktop application powered by the **DeepSeek-V3.2 Interleaved Chain-of-Thought (CoT)** engine. It leverages the latest **Thinking with Tool Use** capability to automatically plan and execute complex file operations through natural language.
+**DeepSeek Cowork** is a next-generation desktop agent framework inspired by **DeepSeek-V3.2 Interleaved Chain-of-Thought**. It leverages the latest **Reasoning with Tool Use** capabilities to plan, execute, and evolve through complex workflows.
 
-Unlike traditional chatbots, this assistant utilizes the **DeepSeek-V3.2** model, which can invoke tools directly within its thinking process (`<think>`). Through a "Think-Call-Think" interleaved flow, it precisely plans tasks, explores the environment, and safely executes actions—whether it's batch file processing, data analysis, or complex agentic workflows.
+By implementing an **Interleaved Chain-of-Thought (CoT)** architecture, the agent doesn't just "chat"—it actively thinks, writes code, executes system commands, and analyzes results in a continuous loop, all within a secure and modern desktop environment.
 
 ![intro](images/english_intro.png)
-
-![App Screenshot](images/首页.png)
-
+![App Screenshot 1](images/首页.png)
+![App Screenshot 2](images/使用界面.png)
 
 ## 🚀 Key Features
 
-*   **🧠 Powered by DeepSeek-V3.2**: 
-    *   **Interleaved CoT**: The industry's first model to support tool calling within thinking mode. The agent not only plans but also actively explores its environment (e.g., listing files, reading content) during the `<think>` process, adjusting strategies in real-time based on feedback.
-    *   **SOTA Inference**: Based on DeepSeek-V3.2 (performance comparable to GPT-5), balancing reasoning capability with response speed, optimized specifically for Agent scenarios.
-*   **🔌 Modular & Self-Evolving Skills Platform**: 
-    *   **Unified Skill Manager**: Manages both built-in System Skills and dynamic AI Skills.
-    *   **AI-Generated Skills**: Supports creating new skills from open-source projects (e.g., `yt-dlp-wrapper`) or user sessions. These skills live in a dedicated `ai_skills` directory.
-    *   **Self-Evolution**: The agent learns from execution failures (e.g., missing dependencies) and automatically updates the skill's memory (`SKILL.md`) to improve future performance.
-*   **🛡️ Secure & Robust Execution**:
-    *   **Workspace Sandbox**: Operations are strictly confined to the user-selected directory.
-    *   **Environment Isolation**: Built-in `env_utils` ensures Python scripts and `pip` commands run correctly in both dev and frozen (EXE) environments.
-    *   **Network Resilience**: Smart retry mechanisms for network-sensitive operations like Git cloning.
-*   **🤖 Multi-Agent Collaboration**: 
-    *   **Parallel Dispatch**: Spawns sub-agents (`agent-manager`) to handle complex tasks concurrently.
-    *   **Real-time Monitor**: Dedicated UI tab to visualize the "Thinking" process and actions of each sub-agent in real-time.
-*   **💾 Auto-Save History**: Chat sessions are automatically saved and restored, allowing seamless continuation of tasks.
-*   **⏯️ Real-time Control**: Supports pausing/resuming tasks at any time, and forcibly stopping execution if stuck in a loop.
-*   **🖥️ Modern UI**: Built with **PySide6** (Qt for Python), offering a responsive and native desktop experience.
-*   **📂 Workspace Sidebar**: Browse workspace file structure in real-time with quick content preview.
+### 🧠 Dual-Engine Support
+*   **DeepSeek R1/V3**: Full support for DeepSeek's latest reasoning models, utilizing their powerful chain-of-thought capabilities for complex problem solving.
+*   **Moonshot AI (Kimi 2.5)**: Native integration with Kimi's API, optimized for long-context understanding and strict tool-call schema compliance.
+
+### ⚡ Interleaved CoT & "God Mode"
+*   **Think-Call-Think**: The agent interleaves reasoning (`<think>`) with actual tool execution. It plans a step, runs a tool (e.g., searches the web, runs a Python script), reads the output, and then refines its plan—just like a human engineer.
+*   **God Mode**: For power users, enable "God Mode" to bypass safety sandboxes, granting the agent full access to system-level subprocesses, registry, and file systems for unrestricted automation.
+
+### 🔌 Self-Evolving Skill System
+*   **Hot-Reloadable Skills**: Drop new Python scripts into `skills/` or `ai_skills/` and they are instantly available to the agent without restarting.
+*   **AI-Generated Skills**: The agent can write its own tools (e.g., a `yt-dlp` wrapper or a specific data scraper) and save them for future use.
+*   **Experience Learning**: The system tracks tool usage success/failure and automatically updates `SKILL.md` documents to "teach" the agent how to use tools better next time.
+
+### 🖥️ Modern Desktop Experience
+*   **Native UI**: Built with PySide6, featuring a clean, responsive **16:9** interface with a forced **Light Mode** for professional consistency.
+*   **Real-Time Feedback**: Watch the agent's thought process unfold in real-time via collapsible "Thinking" bubbles.
+*   **Workspace Sandbox**: Operations are confined to your chosen project folder by default for safety.
 
 ## 📦 Installation
 
 ### Option 1: Run from Executable (Windows)
-1.  Go to the [Releases](../../releases) page.
-2.  Download the latest `deepseek-cowork-vX.X.zip`.
-3.  Unzip and run `deepseek-cowork/deepseek-cowork.exe`.
-4.  No Python installation required.
+1.  Go to the [Releases](../../releases) page to download the latest version.
+2.  Unzip and run `deepseek-cowork.exe`.
+3.  No Python installation required.
 
 ### Option 2: Run from Source
 **Prerequisites**: Python 3.10+
@@ -61,43 +58,41 @@ Unlike traditional chatbots, this assistant utilizes the **DeepSeek-V3.2** model
 
 ## 📖 Usage Guide
 
-1.  **Configuration**:
-    *   Launch the app and click the **⚙️ Settings** button.
-    *   Enter your **DeepSeek API Key**.
-    *   Check and manage enabled skills in the "Skills Center".
+### 1. Configuration
+Launch the app and click the **⚙️ Settings** icon:
+*   **API Key**: Enter your DeepSeek or other LLM provider API key.
+*   **Provider**: Select between `openai` (for DeepSeek) or `anthropic`.
+*   **God Mode**: Toggle this to enable/disable safety restrictions.
 
-2.  **Select Workspace**:
-    *   Click "Select Workspace" to choose the folder you want the agent to work on. **The agent has NO access to files outside this folder.**
+### 2. Select Workspace
+Click the folder icon to select your working directory. The agent treats this folder as its "world" and can read/write files freely within it.
 
-3.  **Start Chatting**:
-    *   Enter a command, e.g.:
-        *   *"Search for the latest news on DeepSeek and summarize the V3.2 features"*
-        *   *"Convert all .docx files in this folder to PDF"*
-        *   *"Read sales.xlsx and generate a sales trend chart"*
-    *   Watch the **Thinking** process in the chat window to experience how V3.2 utilizes interleaved tool calls.
+### 3. Start Automating
+Type your request in natural language. Examples:
+*   *"Scan this project for unused imports and remove them."*
+*   *"Search for the latest stock prices of tech giants and plot a trend chart."*
+*   *"Create a new skill to download YouTube videos using yt-dlp."*
 
-4.  **Control Tasks**:
-    *   Use the **⏸️ Pause** and **⏹️ Stop** buttons at the bottom to control the AI execution flow in real-time.
+### 4. Visual Monitoring
+*   **Chat Tab**: Main interaction interface.
+*   **Sub-Agent Monitor**: When the main agent spawns sub-workers for parallel tasks, watch their logs and status in real-time.
 
 ## 🏗️ Architecture
 
-This project fully leverages the new features of DeepSeek-V3.2:
+*   **`core/`**: The brain.
+    *   `agent.py`: Handles the main event loop, thread management, and CoT logic.
+    *   `llm/`: Adapter layer for OpenAI and Moonshot APIs.
+    *   `skill_manager.py`: Dynamic tool registration and prompt injection.
+*   **`skills/`**: Built-in system capabilities (File I/O, Python Runner, Web Search).
+*   **`ai_skills/`**: User/AI-created extensions.
+*   **`main.py`**: The PySide6 frontend.
 
-*   **`core/`**:
-    *   `agent.py`: Implements the **Interleaved CoT** Agent logic, handling the tool call loop within thinking mode.
-    *   `skill_manager.py`: Manages dynamic tool loading, persistence, and experience tracking.
-    *   `env_utils.py`: Ensures consistent Python environment detection across dev and frozen modes.
-*   **`skills/`**: System-level plugins (Core functionality).
-*   **`ai_skills/`**: AI-generated or user-imported skills (e.g., `yt-dlp-wrapper`). Fully mutable and evolutionary.
-*   **`main.py`**: PySide6 GUI entry point.
+## 🛠️ Extending
+To add a new capability, simply create a folder in `skills/` with:
+1.  `impl.py`: Your Python functions.
+2.  `SKILL.md`: A description of when and how to use these functions.
 
-## 🛠️ Developing New Skills
-
-To add a new skill:
-1.  **System Skills**: Create a folder in `skills/` for core functionality.
-2.  **AI Skills**: Create a folder in `ai_skills/` for flexible, evolving tools.
-3.  Add `SKILL.md` to define the skill's purpose, prompts, and experience.
-4.  Add `impl.py` with Python functions. The `SkillManager` will automatically detect and register these functions.
+The system automagically bridges them to the LLM!
 
 ## 📄 License
 
