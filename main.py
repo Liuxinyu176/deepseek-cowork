@@ -195,19 +195,6 @@ class SettingsDialog(QDialog):
                 self.history_dir_input.setText(directory)
 
         history_dir_btn.clicked.connect(choose_history_dir)
-        
-        # Font Size Setting
-        self.font_size_combo = QComboBox()
-        self.font_size_combo.addItem("小", "small")
-        self.font_size_combo.addItem("中", "medium")
-        self.font_size_combo.addItem("大", "large")
-        
-        current_font_size = self.config_manager.get_font_size()
-        index = self.font_size_combo.findData(current_font_size)
-        if index >= 0:
-            self.font_size_combo.setCurrentIndex(index)
-        
-        form_layout.addRow("字体大小:", self.font_size_combo)
 
         # God Mode Toggle
         self.god_mode_check = QCheckBox("启用 God Mode (解除安全限制)")
@@ -235,12 +222,7 @@ class SettingsDialog(QDialog):
         new_theme = self.theme_combo.currentData()
         old_theme = self.config_manager.get_theme()
         self.config_manager.set_theme(new_theme)
-        
-        # Save Font Size
-        new_font_size = self.font_size_combo.currentData()
-        old_font_size = self.config_manager.get_font_size()
-        self.config_manager.set_font_size(new_font_size)
-        
+
         # Save Provider
         self.config_manager.set("llm_provider", self.provider_combo.currentData())
         # Save API Key
@@ -268,14 +250,7 @@ class SettingsDialog(QDialog):
             app = QApplication.instance()
             if app:
                 apply_theme(app, new_theme)
-        
-        # Apply font size change immediately if changed
-        if new_font_size != old_font_size:
-            # Notify main window to update font sizes
-            parent = self.parent()
-            if parent and hasattr(parent, '_on_font_size_changed'):
-                parent._on_font_size_changed(new_font_size)
-        
+
         self.accept()
 
 class SkillsCenterDialog(QDialog):
@@ -1116,7 +1091,7 @@ class ChatBubble(QFrame):
             
             # 2. Main Content
             self.content_edit = AutoResizingTextEdit()
-            self.content_edit.setStyleSheet("background: transparent; border: none; padding: 0;")
+            self.content_edit.setStyleSheet(f"background: transparent; border: none; padding: 0; color: {c['text_primary']};")
             col_layout.addWidget(self.content_edit)
             
             # 3. Sub-Agent Indicators
@@ -1421,69 +1396,74 @@ class ChatBubble(QFrame):
             self.think_toggle_btn.setChecked(False) # Collapse by default when done
             
     def set_main_content(self, text):
+        # Store the original text for theme updates
+        self._main_content_text = text
         try:
-            # GitHub-like CSS for Markdown
-            style = """
+            # Get theme colors
+            c = get_theme_colors()
+            # GitHub-like CSS for Markdown with theme support
+            style = f"""
             <style>
-               body { 
+               body {{
                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-                   line-height: 1.6; 
-                   color: #1f2937; 
-                   margin: 0; 
+                   line-height: 1.6;
+                   color: {c['text_primary']};
+                   margin: 0;
                    font-size: 14px;
-               }
-               p { margin-top: 0; margin-bottom: 12px; }
-               pre { 
-                   background-color: #f3f4f6; 
-                   padding: 12px; 
-                   border-radius: 6px; 
-                   border: 1px solid #e5e7eb; 
-                   white-space: pre-wrap; 
+                   background-color: transparent;
+               }}
+               p {{ margin-top: 0; margin-bottom: 12px; }}
+               pre {{
+                   background-color: {c['bg_secondary']};
+                   padding: 12px;
+                   border-radius: 6px;
+                   border: 1px solid {c['border']};
+                   white-space: pre-wrap;
                    margin-bottom: 12px;
                    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-               }
-               code { 
-                   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; 
-                   font-size: 90%; 
-                   padding: 0.2em 0.4em; 
-                   background-color: #f3f4f6; 
-                   border-radius: 4px; 
-               }
-               h1, h2, h3 { color: #111827; font-weight: 600; margin-top: 24px; margin-bottom: 12px; }
-               h1 { font-size: 1.5em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
-               h2 { font-size: 1.3em; }
-               a { color: #2563eb; text-decoration: none; }
-               blockquote { 
-                   border-left: 3px solid #d1d5db; 
-                   color: #4b5563; 
-                   padding-left: 1em; 
-                   margin: 0 0 16px 0; 
-               }
-               table { 
-                   border-collapse: separate; 
-                   border-spacing: 0; 
-                   width: 100%; 
-                   margin-bottom: 16px; 
-                   font-size: 13px; 
-                   border: 1px solid #e5e7eb;
+               }}
+               code {{
+                   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                   font-size: 90%;
+                   padding: 0.2em 0.4em;
+                   background-color: {c['bg_secondary']};
+                   border-radius: 4px;
+               }}
+               h1, h2, h3 {{ color: {c['text_primary']}; font-weight: 600; margin-top: 24px; margin-bottom: 12px; }}
+               h1 {{ font-size: 1.5em; border-bottom: 1px solid {c['border']}; padding-bottom: 0.3em; }}
+               h2 {{ font-size: 1.3em; }}
+               a {{ color: {c['accent']}; text-decoration: none; }}
+               blockquote {{
+                   border-left: 3px solid {c['border']};
+                   color: {c['text_secondary']};
+                   padding-left: 1em;
+                   margin: 0 0 16px 0;
+               }}
+               table {{
+                   border-collapse: separate;
+                   border-spacing: 0;
+                   width: 100%;
+                   margin-bottom: 16px;
+                   font-size: 13px;
+                   border: 1px solid {c['border']};
                    border-radius: 6px;
                    overflow: hidden;
-               }
-               th, td { 
-                   border-bottom: 1px solid #e5e7eb; 
-                   border-right: 1px solid #e5e7eb; 
-                   padding: 8px 12px; 
-                   text-align: left; 
-               }
-               th { 
-                   background-color: #f8fafc; 
-                   font-weight: 600; 
-                   color: #4b5563;
-                   border-bottom: 1px solid #e5e7eb;
-               }
-               tr:last-child td { border-bottom: none; }
-               tr:hover td { background-color: #f8fafc; }
-               th:last-child, td:last-child { border-right: none; }
+               }}
+               th, td {{
+                   border-bottom: 1px solid {c['border']};
+                   border-right: 1px solid {c['border']};
+                   padding: 8px 12px;
+                   text-align: left;
+               }}
+               th {{
+                   background-color: {c['bg_secondary']};
+                   font-weight: 600;
+                   color: {c['text_primary']};
+                   border-bottom: 1px solid {c['border']};
+               }}
+               tr:last-child td {{ border-bottom: none; }}
+               tr:hover td {{ background-color: {c['bg_hover']}; }}
+               th:last-child, td:last-child {{ border-right: none; }}
             </style>
             """
             html_content = markdown.markdown(text, extensions=['fenced_code', 'tables', 'nl2br', 'sane_lists'])
@@ -1506,6 +1486,61 @@ class ChatBubble(QFrame):
         # If we are streaming and a tool is called, expand to show it
         if not self.think_toggle_btn.isChecked():
             self.think_toggle_btn.setChecked(True)
+
+    def update_theme(self):
+        """Update styles when theme changes."""
+        if self.role != "User":
+            c = get_theme_colors()
+            # Update think_toggle_btn style
+            self.think_toggle_btn.setStyleSheet(f"""
+                QPushButton {{
+                    text-align: left;
+                    background-color: {c['bg_main']};
+                    color: {c['text_secondary']};
+                    border: 1px solid {c['border']};
+                    border-radius: 12px;
+                    padding: 8px 16px;
+                    font-size: 13px;
+                    font-weight: 500;
+                    margin-bottom: 0px;
+                }}
+                QPushButton:hover {{ background-color: {c['bg_hover']}; color: {c['text_primary']}; border-color: {c['border']}; }}
+                QPushButton:checked {{
+                    background-color: {c['bg_secondary']};
+                    color: {c['text_primary']};
+                    border-color: {c['border']};
+                    border-bottom-left-radius: 0;
+                    border-bottom-right-radius: 0;
+                }}
+            """)
+            # Update think_container style
+            self.think_container.setStyleSheet(f"""
+                QWidget {{
+                    background: {c['bg_secondary']};
+                    border: 1px solid {c['border']};
+                    border-left: 3px solid {c['accent']};
+                    border-top: none;
+                    margin-top: -1px;
+                    margin-left: 0px;
+                    border-bottom-left-radius: 12px;
+                    border-bottom-right-radius: 12px;
+                }}
+            """)
+            # Update sub_agent_logs style
+            if hasattr(self, 'sub_agent_logs'):
+                self.sub_agent_logs.setStyleSheet(f"""
+                    QStackedWidget {{
+                        background: {c['bg_main']};
+                        border: 1px solid {c['border']};
+                        border-radius: 8px;
+                    }}
+                """)
+            # Update content_edit style
+            if hasattr(self, 'content_edit'):
+                self.content_edit.setStyleSheet(f"background: transparent; border: none; padding: 0; color: {c['text_primary']};")
+            # Re-render main content with new theme
+            if hasattr(self, '_main_content_text') and self._main_content_text:
+                self.set_main_content(self._main_content_text)
 
 class ToolCallCard(QFrame):
     clicked = Signal(str, str, str) # tool_id, args, result
@@ -2609,7 +2644,17 @@ class MainWindow(QMainWindow):
                 for tool_id, card in state.tool_cards.items():
                     if card and hasattr(card, 'update_theme'):
                         card.update_theme()
-        
+
+        # 更新所有 ChatBubble 样式
+        for session_id, state in self.sessions.items():
+            if hasattr(state, 'chat_layout') and state.chat_layout:
+                for i in range(state.chat_layout.count()):
+                    item = state.chat_layout.itemAt(i)
+                    if item and item.widget():
+                        widget = item.widget()
+                        if isinstance(widget, ChatBubble) and hasattr(widget, 'update_theme'):
+                            widget.update_theme()
+
         # 更新工具详情区域样式
         td_styles = get_tool_details_style(theme)
         if hasattr(self, 'td_info_label') and self.td_info_label:
