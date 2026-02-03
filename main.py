@@ -873,43 +873,78 @@ class EmptyStateWidget(QWidget):
         return btn
 
 class SystemToast(QFrame):
-    """System Notification in Chat Stream"""
+    """System Notification in Chat Stream - Modern Design"""
     def __init__(self, text, type="info"):
         super().__init__()
-        self.setFrameShape(QFrame.StyledPanel)
-        
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setAlignment(Qt.AlignCenter)
+        self.setFrameShape(QFrame.NoFrame)
         
         # Get dynamic theme colors
-        toast_style = get_system_toast_style(type)
         c = get_theme_colors()
         
-        icon_label = QLabel()
+        # Define colors based on type
         if type == "error":
-            icon_label.setPixmap(qta.icon('fa5s.times-circle', color=c['error_text']).pixmap(16, 16))
+            accent_color = c['error_text']
+            bg_color = c['error_bg']
+            icon_name = 'fa5s.exclamation-circle'
         elif type == "success":
-            icon_label.setPixmap(qta.icon('fa5s.check-circle', color=c['success_text']).pixmap(16, 16))
+            accent_color = c['success_text']
+            bg_color = c['success_bg']
+            icon_name = 'fa5s.check-circle'
         elif type == "warning":
-            icon_label.setPixmap(qta.icon('fa5s.exclamation-triangle', color=c['warning_text']).pixmap(16, 16))
+            accent_color = c['warning_text']
+            bg_color = c['warning_bg']
+            icon_name = 'fa5s.exclamation-triangle'
         else:
-            icon_label.setPixmap(qta.icon('fa5s.info-circle', color=c['info_text']).pixmap(16, 16))
-            
-        layout.addWidget(icon_label)
+            accent_color = c['accent']
+            bg_color = c['bg_secondary']
+            icon_name = 'fa5s.info-circle'
         
+        # Main layout with left accent border
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # Left accent bar
+        accent_bar = QFrame()
+        accent_bar.setFixedWidth(4)
+        accent_bar.setStyleSheet(f"background-color: {accent_color}; border-radius: 2px;")
+        main_layout.addWidget(accent_bar)
+        
+        # Content container
+        content_widget = QWidget()
+        content_layout = QHBoxLayout(content_widget)
+        content_layout.setContentsMargins(12, 10, 12, 10)
+        content_layout.setSpacing(10)
+        content_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        
+        # Icon
+        icon_label = QLabel()
+        icon_label.setPixmap(qta.icon(icon_name, color=accent_color).pixmap(18, 18))
+        icon_label.setFixedSize(20, 20)
+        icon_label.setAlignment(Qt.AlignCenter)
+        content_layout.addWidget(icon_label)
+        
+        # Message text
         msg_label = QLabel(text)
-        msg_label.setStyleSheet(f"color: {toast_style['text']}; font-weight: 500; font-size: 13px; background: transparent;")
+        msg_label.setStyleSheet(f"""
+            color: {c['text_primary']};
+            font-size: 13px;
+            background: transparent;
+            line-height: 1.5;
+        """)
         msg_label.setWordWrap(True)
         msg_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(msg_label)
+        content_layout.addWidget(msg_label, 1)  # Stretch to fill
         
+        main_layout.addWidget(content_widget, 1)
+        
+        # Apply styles
         self.setStyleSheet(f"""
             QFrame {{
-                background-color: {toast_style['bg']};
-                border: 1px solid {toast_style['border']};
-                border-radius: 8px;
-                margin: 8px 40px;
+                background-color: {bg_color};
+                border: 1px solid {c['border']};
+                border-radius: 6px;
+                margin: 6px 20px;
             }}
         """)
 
@@ -955,14 +990,21 @@ class ChatBubble(QFrame):
             content_label.setWordWrap(True)
             content_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
             content_label.setStyleSheet(f"color: #ffffff; font-size: 14px; line-height: 1.6; border: none; background: transparent;")
-            
+
             # Smart Width: If text is long, force a minimum width to avoid narrow tall bubbles
             fm = QFontMetrics(content_label.font())
+            text_width = fm.horizontalAdvance(text)
             # Check if text is long enough to warrant a wider bubble
-            if len(text) > 50 or fm.horizontalAdvance(text) > 400:
+            if len(text) > 50 or text_width > 400:
                 content_label.setMinimumWidth(400)
-                
+
             bubble_layout.addWidget(content_label)
+
+            # Adjust padding based on text length (short text = less padding)
+            if len(text) <= 10:
+                bubble_layout.setContentsMargins(12, 6, 12, 6)  # Less padding for short text
+            else:
+                bubble_layout.setContentsMargins(16, 10, 16, 10)  # Normal padding
             
             cw_layout.addWidget(bubble_frame)
             
@@ -2182,12 +2224,13 @@ class MainWindow(QMainWindow):
         # --- Main Content ---
         main_container = QWidget()
         main_container.setObjectName("MainContainer")
-        main_container.setMinimumWidth(400) # Protect main content
+        main_container.setMinimumWidth(300) # Allow smaller width for flexibility
         self.main_splitter.addWidget(main_container)
 
         # Right Sidebar (Workspace File Tree)
         self.right_sidebar = QWidget()
         # self.right_sidebar.setMinimumWidth(200) # Removed to allow collapsing
+        self.right_sidebar.setMaximumWidth(400)  # Limit maximum width to prevent expansion
         self.right_sidebar.setStyleSheet(get_right_sidebar_style())
         self.right_sidebar.setVisible(False)
         
@@ -2230,9 +2273,9 @@ class MainWindow(QMainWindow):
         preview_layout.setContentsMargins(0, 0, 0, 0)
         preview_layout.setSpacing(0)
         
-        r_preview_header = QLabel("  内容预览")
-        r_preview_header.setStyleSheet(get_preview_header_style())
-        preview_layout.addWidget(r_preview_header)
+        self.r_preview_header = QLabel("  内容预览")
+        self.r_preview_header.setStyleSheet(get_preview_header_style())
+        preview_layout.addWidget(self.r_preview_header)
         
         self.preview_stack = QStackedWidget()
         self.preview_stack.setStyleSheet(f"background-color: {c['bg_main']};")
@@ -2243,6 +2286,8 @@ class MainWindow(QMainWindow):
         self.preview_image = QLabel()
         self.preview_image.setAlignment(Qt.AlignCenter)
         self.preview_image.setStyleSheet(f"background-color: {c['bg_main']};")
+        # Limit image size to prevent layout expansion
+        self.preview_image.setMaximumSize(400, 300)
         self.preview_stack.addWidget(self.preview_text)
         self.preview_stack.addWidget(self.preview_image)
         self.preview_stack.setCurrentWidget(self.preview_text)
@@ -2514,6 +2559,8 @@ class MainWindow(QMainWindow):
             self.preview_text.setStyleSheet(f"border: none; padding: 8px; color: {c['text_primary']}; font-family: 'Consolas', monospace; font-size: 11px; background-color: {c['bg_main']};")
         if hasattr(self, 'preview_image') and self.preview_image:
             self.preview_image.setStyleSheet(f"background-color: {c['bg_main']};")
+        if hasattr(self, 'r_preview_header') and self.r_preview_header:
+            self.r_preview_header.setStyleSheet(get_preview_header_style(theme))
         
         # 更新工作区选择器样式
         if hasattr(self, 'ws_container') and self.ws_container:
@@ -2558,6 +2605,15 @@ class MainWindow(QMainWindow):
                 for tool_id, card in state.tool_cards.items():
                     if card and hasattr(card, 'update_theme'):
                         card.update_theme()
+        
+        # 更新工具详情区域样式
+        td_styles = get_tool_details_style(theme)
+        if hasattr(self, 'td_info_label') and self.td_info_label:
+            self.td_info_label.setStyleSheet(td_styles['info'])
+        if hasattr(self, 'td_args_edit') and self.td_args_edit:
+            self.td_args_edit.setStyleSheet(td_styles['input'])
+        if hasattr(self, 'td_result_edit') and self.td_result_edit:
+            self.td_result_edit.setStyleSheet(td_styles['result'])
 
     def _on_font_size_changed(self, font_size):
         """字体大小变更时的回调，更新所有相关控件。"""
@@ -3264,7 +3320,8 @@ class MainWindow(QMainWindow):
                     return
                 pixmap = QPixmap(path)
                 self.preview_pixmap = pixmap
-                scaled = pixmap.scaled(self.preview_stack.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                # Scale pixmap to fit within preview_image while keeping aspect ratio
+                scaled = pixmap.scaled(self.preview_image.maximumSize(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 self.preview_image.setPixmap(scaled)
                 self.preview_stack.setCurrentWidget(self.preview_image)
                 return
