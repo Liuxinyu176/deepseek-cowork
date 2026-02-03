@@ -657,8 +657,8 @@ class AutoResizingInputEdit(QTextEdit):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setFrameStyle(QFrame.NoFrame)
         self.textChanged.connect(self.adjustHeight)
-        self.setFixedHeight(40) # Initial height
-        self.min_height = 40
+        self.setFixedHeight(48) # Initial height
+        self.min_height = 48
         self.max_height = 150
         self.anim = None
         
@@ -822,11 +822,11 @@ class EmptyStateWidget(QWidget):
         
     def reflow_cards(self):
         # Calculate columns based on width
-        # Card min width ~260, spacing 24
+        # Card min width ~240, max width ~300, spacing 24
         w = self.width()
-        if w > 1100:
+        if w > 1000:
             cols = 4
-        elif w > 600:
+        elif w > 550:
             cols = 2
         else:
             cols = 1
@@ -851,24 +851,26 @@ class EmptyStateWidget(QWidget):
     def create_action_card(self, title, desc, prompt):
         btn = QPushButton()
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setMinimumHeight(140) # Significantly increase card height
-        btn.setMinimumWidth(260) # Ensure sufficient width
+        btn.setMinimumHeight(120)
+        btn.setMinimumWidth(240)
+        btn.setMaximumWidth(300)
         btn.setStyleSheet(self.styles['card'])
-        
+
         layout = QVBoxLayout(btn)
-        layout.setSpacing(10) 
-        
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(8)
+
         t_label = QLabel(title)
         t_label.setStyleSheet(self.styles['card_title'])
-        
+
         d_label = QLabel(desc)
         d_label.setStyleSheet(self.styles['card_desc'])
-        d_label.setWordWrap(True) # Ensure text is fully visible
-        
+        d_label.setWordWrap(True)
+
         layout.addWidget(t_label)
         layout.addWidget(d_label)
-        layout.addStretch() # Push content to top
-        
+        layout.addStretch()
+
         btn.clicked.connect(lambda: self.main_window.input_field.setText(prompt))
         return btn
 
@@ -969,23 +971,30 @@ class ChatBubble(QFrame):
             
             # 1. Content Wrapper (to push content to right)
             content_wrapper = QWidget()
+            content_wrapper.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
             cw_layout = QVBoxLayout(content_wrapper)
             cw_layout.setContentsMargins(0,0,0,0)
+            cw_layout.setSpacing(0)
             
             # Bubble Frame - Use accent color for gradient
             bubble_frame = QFrame()
             bubble_frame.setStyleSheet(f"""
                 QFrame {{
-                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                                              stop:0 {c['accent']}, 
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                              stop:0 {c['accent']},
                                               stop:1 {c['accent']});
                     border-radius: 16px;
                     border-bottom-right-radius: 4px;
                 }}
             """)
             bubble_layout = QVBoxLayout(bubble_frame)
-            bubble_layout.setContentsMargins(16, 12, 16, 12)
-            
+
+            # Adjust padding based on text length (short text = less padding)
+            if len(text) <= 10:
+                bubble_layout.setContentsMargins(12, 6, 12, 6)  # Less padding for short text
+            else:
+                bubble_layout.setContentsMargins(16, 12, 16, 12)  # Normal padding
+
             content_label = QLabel(text)
             content_label.setWordWrap(True)
             content_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -999,12 +1008,6 @@ class ChatBubble(QFrame):
                 content_label.setMinimumWidth(400)
 
             bubble_layout.addWidget(content_label)
-
-            # Adjust padding based on text length (short text = less padding)
-            if len(text) <= 10:
-                bubble_layout.setContentsMargins(12, 6, 12, 6)  # Less padding for short text
-            else:
-                bubble_layout.setContentsMargins(16, 10, 16, 10)  # Normal padding
             
             cw_layout.addWidget(bubble_frame)
             
@@ -1015,11 +1018,11 @@ class ChatBubble(QFrame):
             # Avatar
             avatar = Avatar("User", 40)
             avatar_container = QWidget()
+            avatar_container.setFixedSize(40, 45)  # Fixed size to prevent expansion
             avatar_layout = QVBoxLayout(avatar_container)
             avatar_layout.setContentsMargins(0, 5, 0, 0) # Top margin for alignment
             avatar_layout.setSpacing(0)
             avatar_layout.addWidget(avatar)
-            avatar_layout.addStretch()
             main_layout.addWidget(avatar_container)
 
         else: # Agent
@@ -2229,8 +2232,7 @@ class MainWindow(QMainWindow):
 
         # Right Sidebar (Workspace File Tree)
         self.right_sidebar = QWidget()
-        # self.right_sidebar.setMinimumWidth(200) # Removed to allow collapsing
-        self.right_sidebar.setMaximumWidth(400)  # Limit maximum width to prevent expansion
+        self.right_sidebar.setMinimumWidth(200)  # Allow collapsing but keep minimum
         self.right_sidebar.setStyleSheet(get_right_sidebar_style())
         self.right_sidebar.setVisible(False)
         
@@ -2627,7 +2629,7 @@ class MainWindow(QMainWindow):
         # 更新输入框的最小/最大高度以适应新字体
         if hasattr(self, 'input_field') and self.input_field:
             # 根据字体大小调整高度限制
-            base_height = 40 if font_size == "small" else (40 if font_size == "medium" else 48)
+            base_height = 48 if font_size == "small" else (48 if font_size == "medium" else 56)
             max_height = 120 if font_size == "small" else (150 if font_size == "medium" else 180)
             self.input_field.min_height = base_height
             self.input_field.max_height = max_height
@@ -2976,12 +2978,48 @@ class MainWindow(QMainWindow):
                     is_selected = session_id == self.current_session_id
                     btn.setStyleSheet(get_history_button_style(selected=is_selected))
                     btn.setProperty("session_id", session_id)
-                    
+                    btn.setProperty("file_path", file_path)
+                    btn.setContextMenuPolicy(Qt.CustomContextMenu)
+                    btn.customContextMenuRequested.connect(lambda pos, b=btn: self.show_history_context_menu(b, pos))
+
                     btn.clicked.connect(lambda checked=False, sid=session_id: self.load_session(sid))
                     self.history_layout.addWidget(btn)
             except Exception as e:
                 continue
         self.history_layout.addStretch()
+
+    def show_history_context_menu(self, btn, pos):
+        """显示历史会话右键菜单"""
+        menu = QMenu(self)
+        delete_action = menu.addAction("删除会话")
+        delete_action.triggered.connect(lambda: self.delete_history_session(btn))
+        menu.exec_(btn.mapToGlobal(pos))
+
+    def delete_history_session(self, btn):
+        """删除历史会话"""
+        file_path = btn.property("file_path")
+        session_id = btn.property("session_id")
+
+        if not file_path or not os.path.exists(file_path):
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "确认删除",
+            "确定要删除这个会话吗？此操作不可恢复。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            try:
+                os.remove(file_path)
+                # If deleted session is current session, create new session
+                if session_id == self.current_session_id:
+                    self.create_new_session()
+                self.refresh_history_list()
+            except Exception as e:
+                QMessageBox.warning(self, "删除失败", f"无法删除会话: {str(e)}")
 
     def create_load_more_btn(self):
         btn = QPushButton("显示更多历史消息")

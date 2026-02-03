@@ -366,13 +366,13 @@ def get_tech_stylesheet(theme="dark"):
     /* Search Box / Chips */
     QTextEdit#MainInput {{
         font-size: 15px;
-        border: 1px solid {c_border};
+        border: 1px solid {c_accent};
         border-radius: 20px; /* Pill shape */
         padding: 10px 16px;
         background-color: {c_bg_card};
     }}
     QTextEdit#MainInput:focus {{
-        border: 2px solid {c_accent};
+        border: 1px solid {c_accent};
     }}
 
     /* Lists & Trees */
@@ -629,6 +629,7 @@ def get_theme_colors(theme=None):
             "error_text": "#cf222e",
             "warning": "#9a6700",
             "warning_bg": "#fff8c5",
+            "warning_text": "#9a6700",
             "info": "#0969da",
             
             # 选择色
@@ -914,8 +915,8 @@ def get_main_input_style(theme=None):
     return f"""
         QTextEdit#MainInput {{
             padding: 12px 16px;
-            border-radius: 24px;
-            border: 1px solid {c['border']};
+            border-radius: 20px;
+            border: 1px solid {c['accent']};
             background: {c['bg_card']};
             font-size: 14px;
             color: {c['text_primary']};
@@ -923,6 +924,7 @@ def get_main_input_style(theme=None):
         QTextEdit#MainInput:focus {{
             border: 1px solid {c['accent']};
             background: {c['bg_card']};
+            border-radius: 20px;
         }}
     """
 
@@ -1024,7 +1026,7 @@ def get_dialog_stylesheet(theme=None):
         }}
         QLineEdit, QTextEdit, QPlainTextEdit {{
             background-color: {c['bg_input']};
-            border: 1px solid {c['border']};
+            border: 1px solid {c['accent']};
             border-radius: 6px;
             padding: 8px;
             color: {c['text_primary']};

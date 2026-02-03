@@ -1,22 +1,19 @@
-## 拆分计划
+## 问题分析
 
-将 SystemToast 类从 main.py 拆分到 `ui/components/toast.py`
+代码逻辑有问题：
+1. 第 987 行先设置了 `bubble_layout.setContentsMargins(16, 12, 16, 12)`
+2. 第 1001 行 `bubble_layout.addWidget(content_label)`
+3. 第 1003-1007 行又重新设置内边距
 
-## 步骤
+但问题是 `addWidget` 在调整内边距之前执行了，而且内边距调整逻辑在 `addWidget` 之后，这可能导致布局计算不正确。
 
-1. 创建目录结构 `ui/components/`
-2. 创建 `ui/components/__init__.py`
-3. 创建 `ui/components/toast.py` 包含 SystemToast 类
-4. 更新 main.py 导入 SystemToast
-5. 删除 main.py 中的 SystemToast 类定义
-6. 运行语法检查验证
+## 解决方案
 
-## 依赖分析
+重新组织代码：
+1. 先根据文本长度确定内边距
+2. 设置内边距
+3. 然后添加 widget
 
-SystemToast 依赖：
-- PySide6.QtWidgets: QFrame, QHBoxLayout, QLabel, QWidget
-- PySide6.QtCore: Qt
-- core.theme: get_theme_colors
-- qtawesome as qta
+## 修改内容
 
-这些依赖都需要在新文件中导入。
+调整代码顺序，确保内边距在添加 widget 之前正确设置。
