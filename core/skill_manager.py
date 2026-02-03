@@ -123,8 +123,6 @@ class SkillManager:
             if not os.path.exists(skills_dir):
                 continue
             
-            is_ai_dir = os.path.basename(skills_dir) == "ai_skills"
-
             for skill_name in os.listdir(skills_dir):
                 if skill_name == "__pycache__" or skill_name.startswith('.'):
                     continue
@@ -144,10 +142,6 @@ class SkillManager:
                     "enabled": True, # Default to true if not in config
                     "tools": []
                 }
-
-                if is_ai_dir:
-                    skill_info["type"] = "ai_generated"
-                    skill_info["created_by"] = "ai"
                 
                 # Check config
                 if self.config_manager:
@@ -199,9 +193,10 @@ class SkillManager:
         except Exception as e:
             return False, f"Import failed: {e}"
 
-    def update_skill(self, skill_name, description=None, instructions=None, experience=None, replace_experience=False):
+    def update_skill_experience(self, skill_name, experience_text):
         """
-        Generic update for skill metadata and content.
+        Append a new experience string to the SKILL.md of the given skill.
+        This enables 'Self-Evolving' capabilities.
         """
         # 1. Find the skill path
         skill_path = None
@@ -233,81 +228,58 @@ class SkillManager:
             
             lines = frontmatter_raw.split('\n')
             new_lines = []
-            
-            # Track what we've handled
-            desc_updated = False
-            exp_updated = False
+            exp_found = False
             
             # 4. Update Frontmatter
+            # We need to robustly handle the YAML-like structure. 
+            # If 'experience:' exists, we append to it.
+            # If not, we add it.
+            
+            # Simple approach: Check if 'experience:' line exists
+            # Note: This simple parser assumes one-line list or multi-line standard yaml.
+            # Our parser supports [item1, item2].
+            
+            # Let's rebuild the frontmatter lines
             for line in lines:
-                if description and line.strip().startswith('description:'):
-                    new_lines.append(f'description: {description}')
-                    desc_updated = True
-                elif experience and line.strip().startswith('experience:'):
-                    if replace_experience:
-                        # Replace mode
-                        if isinstance(experience, list):
-                            quoted_exp = [f'"{e.replace("\"", "\\\"")}"' for e in experience]
-                            new_lines.append(f'experience: [{", ".join(quoted_exp)}]')
-                        else:
-                            quoted_exp = f'"{experience.replace("\"", "\\\"")}"'
-                            new_lines.append(f'experience: [{quoted_exp}]')
-                    else:
-                        # Append mode (default behavior)
-                        key, val = line.split(':', 1)
-                        val = val.strip()
-                        current_exp = []
-                        if val.startswith('[') and val.endswith(']'):
-                            inner = val[1:-1]
-                            if inner.strip():
-                                current_exp = [v.strip().strip('"\'') for v in inner.split(',')]
-                        
-                        to_add = experience if isinstance(experience, list) else [experience]
-                        for item in to_add:
-                            if item not in current_exp:
-                                current_exp.append(item)
-                        
-                        quoted_exp = [f'"{e.replace("\"", "\\\"")}"' for e in current_exp]
-                        new_lines.append(f'experience: [{", ".join(quoted_exp)}]')
-                    exp_updated = True
+                if line.strip().startswith('experience:'):
+                    # Found existing experience field
+                    # We need to parse the existing list and add to it
+                    key, val = line.split(':', 1)
+                    val = val.strip()
+                    current_exp = []
+                    if val.startswith('[') and val.endswith(']'):
+                        inner = val[1:-1]
+                        if inner.strip():
+                            current_exp = [v.strip().strip('"\'') for v in inner.split(',')]
+                    
+                    if experience_text not in current_exp:
+                        current_exp.append(experience_text)
+                    
+                    # Re-serialize to JSON-style list for simplicity
+                    # Escape quotes in strings
+                    quoted_exp = [f'"{e.replace('"', '\\"')}"' for e in current_exp]
+                    new_line = f'experience: [{", ".join(quoted_exp)}]'
+                    new_lines.append(new_line)
+                    exp_found = True
                 else:
                     new_lines.append(line)
             
-            # Handle new fields if they didn't exist
-            if description and not desc_updated:
-                # Insert description at top if not found (though it should be there)
-                new_lines.insert(0, f'description: {description}')
-                
-            if experience and not exp_updated:
-                 if isinstance(experience, list):
-                    quoted_exp = [f'"{e.replace("\"", "\\\"")}"' for e in experience]
-                    new_lines.append(f'experience: [{", ".join(quoted_exp)}]')
-                 else:
-                    quoted_exp = f'"{experience.replace("\"", "\\\"")}"'
-                    new_lines.append(f'experience: [{quoted_exp}]')
-
+            if not exp_found:
+                # Add new experience field
+                quoted_exp = f'"{experience_text.replace('"', '\\"')}"'
+                new_lines.append(f'experience: [{quoted_exp}]')
+            
+            # 5. Write back
             new_frontmatter = "\n".join(new_lines)
-            
-            # 5. Update Body
-            new_body = instructions if instructions is not None else body
-            
-            new_content = f"---\n{new_frontmatter}\n---\n{new_body}"
+            new_content = f"---\n{new_frontmatter}\n---\n{body}"
             
             with open(md_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
                 
-            return True, f"Skill '{skill_name}' updated successfully."
+            return True, f"Experience added to '{skill_name}'."
             
         except Exception as e:
-            return False, f"Failed to update skill: {e}"
-
-    def update_skill_experience(self, skill_name, experience_text):
-        """
-        Append a new experience string to the SKILL.md of the given skill.
-        This enables 'Self-Evolving' capabilities.
-        """
-        return self.update_skill(skill_name, experience=experience_text, replace_experience=False)
-
+            return False, f"Failed to update experience: {e}"
 
     def check_for_updates(self):
         """

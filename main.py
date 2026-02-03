@@ -18,7 +18,14 @@ from core.skill_generator import SkillGenerator
 from skills.skill_creator.impl import create_new_skill
 from core.interaction import bridge
 from core.env_utils import get_app_data_dir, get_base_dir
-from core.theme import apply_theme, DesignTokens
+from core.theme import (apply_theme, DesignTokens, get_theme_colors, 
+                        get_sidebar_style, get_right_sidebar_style, get_history_button_style,
+                        get_workspace_selector_style, get_file_tree_style, get_preview_header_style,
+                        get_skill_card_style, get_sidebar_button_style, get_new_chat_button_style,
+                        get_right_tabs_style, get_tool_details_style, get_active_skills_label_style,
+                        get_confirmation_dialog_style, get_menu_stylesheet, get_current_theme,
+                        get_empty_state_style, get_main_window_stylesheet, get_dialog_stylesheet,
+                        get_system_toast_style, get_font_size, get_padding)
 import shutil
 import qtawesome as qta
 from PySide6.QtGui import (QAction, QTextOption, QIcon, QFont, QFontMetrics, QPixmap, 
@@ -41,30 +48,8 @@ try:
 except ImportError:
     QDARKTHEME_AVAILABLE = False
 
-# Global Menu Stylesheet to ensure consistency and force light theme
-MENU_STYLESHEET = """
-QMenu {
-    background-color: #ffffff;
-    border: 1px solid #d0d7de;
-    border-radius: 6px;
-    padding: 4px;
-}
-QMenu::item {
-    padding: 6px 24px 6px 12px;
-    border-radius: 4px;
-    color: #24292f;
-    background-color: transparent;
-}
-QMenu::item:selected {
-    background-color: #0969da;
-    color: #ffffff;
-}
-QMenu::separator {
-    height: 1px;
-    background: #d0d7de;
-    margin: 4px 0;
-}
-"""
+# Global Menu Stylesheet - 动态获取，支持深浅色主题
+MENU_STYLESHEET = get_menu_stylesheet()
 
 # --- Helper Classes for UI ---
 
@@ -111,13 +96,29 @@ class SettingsDialog(QDialog):
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.setWindowTitle("设置")
-        self.resize(450, 300)
+        self.resize(450, 350)
         self.config_manager = config_manager
+        
+        # Apply dialog stylesheet
+        self.setStyleSheet(get_dialog_stylesheet())
         
         layout = QVBoxLayout(self)
 
         # API Key
         form_layout = QFormLayout()
+
+        # Theme Selection
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("自动（跟随系统）", "auto")
+        self.theme_combo.addItem("亮色模式", "light")
+        self.theme_combo.addItem("暗色模式", "dark")
+        
+        current_theme = self.config_manager.get_theme()
+        index = self.theme_combo.findData(current_theme)
+        if index >= 0:
+            self.theme_combo.setCurrentIndex(index)
+        
+        form_layout.addRow("界面主题:", self.theme_combo)
 
         # LLM Provider
         self.provider_combo = QComboBox()
@@ -139,7 +140,8 @@ class SettingsDialog(QDialog):
         
         # API Key Guide
         guide_label = QLabel('API Key 获取方法：<br>① DeepSeek: <a href="https://platform.deepseek.com/">DeepSeek 开发者平台</a>')
-        guide_label.setStyleSheet("color: #5f6368; font-size: 11px; margin-bottom: 8px;")
+        c = get_theme_colors()
+        guide_label.setStyleSheet(f"color: {c['text_secondary']}; font-size: 11px; margin-bottom: 8px;")
         guide_label.setOpenExternalLinks(True)
         guide_label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
         form_layout.addRow("", guide_label)
@@ -193,12 +195,13 @@ class SettingsDialog(QDialog):
                 self.history_dir_input.setText(directory)
 
         history_dir_btn.clicked.connect(choose_history_dir)
-        
+
         # God Mode Toggle
         self.god_mode_check = QCheckBox("启用 God Mode (解除安全限制)")
         self.god_mode_check.setToolTip("警告：开启后，Agent 将拥有对全盘文件的访问权限，并可执行任意 Python 代码。\n请仅在您完全信任 Agent 操作时开启。")
         self.god_mode_check.setChecked(self.config_manager.get_god_mode())
-        self.god_mode_check.setStyleSheet("QCheckBox { color: #d93025; font-weight: bold; }")
+        c = get_theme_colors()
+        self.god_mode_check.setStyleSheet(f"QCheckBox {{ color: {c['error_text']}; font-weight: bold; }}")
         form_layout.addRow("", self.god_mode_check)
         
 
@@ -215,6 +218,11 @@ class SettingsDialog(QDialog):
         layout.addLayout(btn_layout)
 
     def save_settings(self):
+        # Save Theme
+        new_theme = self.theme_combo.currentData()
+        old_theme = self.config_manager.get_theme()
+        self.config_manager.set_theme(new_theme)
+
         # Save Provider
         self.config_manager.set("llm_provider", self.provider_combo.currentData())
         # Save API Key
@@ -235,6 +243,14 @@ class SettingsDialog(QDialog):
         # Save God Mode
         self.config_manager.set_god_mode(self.god_mode_check.isChecked())
         
+        # Apply theme change immediately if theme changed
+        if new_theme != old_theme:
+            from core.theme import apply_theme
+            from PySide6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app:
+                apply_theme(app, new_theme)
+
         self.accept()
 
 class SkillsCenterDialog(QDialog):
@@ -244,6 +260,9 @@ class SkillsCenterDialog(QDialog):
         self.resize(600, 500)
         self.skill_manager = skill_manager
         self.config_manager = config_manager
+        
+        # Apply dialog stylesheet
+        self.setStyleSheet(get_dialog_stylesheet())
         
         layout = QVBoxLayout(self)
         
@@ -327,17 +346,18 @@ class SkillsCenterDialog(QDialog):
     def add_skill_card(self, skill, parent_layout):
         card = QFrame()
         card.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
-        card.setStyleSheet("background-color: #f9f9f9; border-radius: 5px; margin-bottom: 5px;")
+        card.setStyleSheet(get_skill_card_style())
         
         h_layout = QHBoxLayout(card)
         
         # Info
         v_layout = QVBoxLayout()
         name_lbl = QLabel(f"{skill['name']}")
-        name_lbl.setStyleSheet("font-weight: bold; font-size: 14px;")
+        c = get_theme_colors()
+        name_lbl.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {c['text_primary']};")
         desc_lbl = QLabel(skill.get('description_cn') or skill.get('description', ''))
         desc_lbl.setWordWrap(True)
-        desc_lbl.setStyleSheet("color: #555;")
+        desc_lbl.setStyleSheet(f"color: {c['text_secondary']};")
         
         v_layout.addWidget(name_lbl)
         v_layout.addWidget(desc_lbl)
@@ -361,11 +381,12 @@ class SkillsCenterDialog(QDialog):
             deps_layout.setSpacing(4)
             
             icon_lbl = QLabel()
-            icon_lbl.setPixmap(qta.icon('fa5s.box', color='#1a73e8').pixmap(12, 12))
+            c = get_theme_colors()
+            icon_lbl.setPixmap(qta.icon('fa5s.box', color=c['accent']).pixmap(12, 12))
             icon_lbl.setFixedSize(14, 14)
             
             txt_lbl = QLabel(f"依赖: {deps_str}")
-            txt_lbl.setStyleSheet("color: #1a73e8; font-size: 11px;")
+            txt_lbl.setStyleSheet(f"color: {c['accent']}; font-size: 11px;")
             
             deps_layout.addWidget(icon_lbl)
             deps_layout.addWidget(txt_lbl)
@@ -376,8 +397,9 @@ class SkillsCenterDialog(QDialog):
         # Experience (Evolution)
         exp = skill.get('experience', [])
         if exp and isinstance(exp, list):
+             c = get_theme_colors()
              exp_frame = QFrame()
-             exp_frame.setStyleSheet("background-color: #f1f8e9; border-radius: 4px; padding: 4px; margin-top: 4px;")
+             exp_frame.setStyleSheet(f"background-color: {c['success_bg']}; border-radius: 4px; padding: 4px; margin-top: 4px;")
              exp_layout = QVBoxLayout(exp_frame)
              exp_layout.setContentsMargins(4,4,4,4)
              exp_layout.setSpacing(2)
@@ -388,9 +410,9 @@ class SkillsCenterDialog(QDialog):
              h_layout_exp.setSpacing(4)
              
              exp_icon = QLabel()
-             exp_icon.setPixmap(qta.icon('fa5s.chart-line', color='#33691e').pixmap(12, 12))
+             exp_icon.setPixmap(qta.icon('fa5s.chart-line', color=c['success_text']).pixmap(12, 12))
              exp_header = QLabel(f"进化记录 ({len(exp)})")
-             exp_header.setStyleSheet("font-weight: bold; color: #33691e; font-size: 11px;")
+             exp_header.setStyleSheet(f"font-weight: bold; color: {c['success_text']}; font-size: 11px;")
              
              h_layout_exp.addWidget(exp_icon)
              h_layout_exp.addWidget(exp_header)
@@ -400,7 +422,7 @@ class SkillsCenterDialog(QDialog):
              
              for e in exp:
                  e_lbl = QLabel(f"• {e}")
-                 e_lbl.setStyleSheet("color: #558b2f; font-size: 10px;")
+                 e_lbl.setStyleSheet(f"color: {c['success_text']}; font-size: 10px;")
                  e_lbl.setWordWrap(True)
                  exp_layout.addWidget(e_lbl)
              v_layout.addWidget(exp_frame)
@@ -610,8 +632,8 @@ class AutoResizingInputEdit(QTextEdit):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setFrameStyle(QFrame.NoFrame)
         self.textChanged.connect(self.adjustHeight)
-        self.setFixedHeight(40) # Initial height
-        self.min_height = 40
+        self.setFixedHeight(48) # Initial height
+        self.min_height = 48
         self.max_height = 150
         self.anim = None
         
@@ -727,41 +749,44 @@ class EmptyStateWidget(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main_window = main_window
+        self.styles = get_empty_state_style()
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
-        
+        layout.setSpacing(0)
+        layout.setContentsMargins(20, 10, 20, 10)
+
         # Icon
         icon = QLabel()
-        icon.setPixmap(qta.icon('fa5s.robot', color=DesignTokens.border).pixmap(64, 64))
+        icon.setPixmap(qta.icon('fa5s.robot', color=self.styles['icon_color']).pixmap(48, 48))
         icon.setAlignment(Qt.AlignCenter)
-        
+
         # Title
         title = QLabel("今天想处理什么文件？")
-        title.setStyleSheet(f"font-size: 20px; font-weight: 600; color: {DesignTokens.text_primary};")
+        title.setStyleSheet(self.styles['title'])
         title.setAlignment(Qt.AlignCenter)
-        
+
         # Grid
         self.grid_widget = QWidget()
         self.grid_layout = QGridLayout(self.grid_widget)
-        self.grid_layout.setSpacing(24) # Increase spacing
-        
+        self.grid_layout.setSpacing(16)
+        self.grid_layout.setContentsMargins(0, 0, 0, 0)
+
         self.actions_data = [
             ("📁 整理文件", "按类型自动分类", "帮我把当前目录下的文件按类型分类整理"),
             ("🖼️ 处理图片", "批量重命名/压缩", "帮我把所有图片重命名为日期格式"),
             ("🔍 代码搜索", "在项目中查找内容", "搜索当前项目中关于 'TODO' 的代码"),
             ("📊 生成报告", "分析目录结构", "分析当前目录结构并生成一份报告")
         ]
-        
+
         self.action_cards = []
         for text, desc, prompt in self.actions_data:
             btn = self.create_action_card(text, desc, prompt)
             self.action_cards.append(btn)
-            
-        layout.addStretch()
+
         layout.addWidget(icon)
-        layout.addSpacing(24)
+        layout.addSpacing(12)
         layout.addWidget(title)
-        layout.addSpacing(40)
+        layout.addSpacing(20)
         layout.addWidget(self.grid_widget)
         layout.addStretch()
         
@@ -774,11 +799,11 @@ class EmptyStateWidget(QWidget):
         
     def reflow_cards(self):
         # Calculate columns based on width
-        # Card min width ~260, spacing 24
+        # Card min width ~200, max width ~280, spacing 16
         w = self.width()
-        if w > 1100:
+        if w > 900:
             cols = 4
-        elif w > 600:
+        elif w > 480:
             cols = 2
         else:
             cols = 1
@@ -803,85 +828,102 @@ class EmptyStateWidget(QWidget):
     def create_action_card(self, title, desc, prompt):
         btn = QPushButton()
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setMinimumHeight(140) # Significantly increase card height
-        btn.setMinimumWidth(260) # Ensure sufficient width
-        btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {DesignTokens.bg_main};
-                border: 1px solid {DesignTokens.border};
-                border-radius: 16px;
-                padding: 24px;
-                text-align: left;
-            }}
-            QPushButton:hover {{
-                border: 1px solid {DesignTokens.primary};
-                background-color: {DesignTokens.bg_secondary};
-            }}
-        """)
-        
+        btn.setMinimumHeight(80)
+        btn.setMaximumHeight(100)
+        btn.setMinimumWidth(200)
+        btn.setMaximumWidth(280)
+        btn.setStyleSheet(self.styles['card'])
+
         layout = QVBoxLayout(btn)
-        layout.setSpacing(10) 
-        
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(4)
+
         t_label = QLabel(title)
-        t_label.setStyleSheet(f"font-size: 18px; font-weight: 600; color: {DesignTokens.text_primary}; background: transparent; border: none;") 
-        
+        t_label.setStyleSheet(self.styles['card_title'])
+
         d_label = QLabel(desc)
-        d_label.setStyleSheet(f"font-size: 14px; color: {DesignTokens.text_secondary}; background: transparent; border: none;") 
-        d_label.setWordWrap(True) # Ensure text is fully visible
-        
+        d_label.setStyleSheet(self.styles['card_desc'])
+        d_label.setWordWrap(True)
+
         layout.addWidget(t_label)
         layout.addWidget(d_label)
-        layout.addStretch() # Push content to top
-        
+
         btn.clicked.connect(lambda: self.main_window.input_field.setText(prompt))
         return btn
 
 class SystemToast(QFrame):
-    """System Notification in Chat Stream"""
+    """System Notification in Chat Stream - Modern Design"""
     def __init__(self, text, type="info"):
         super().__init__()
-        self.setFrameShape(QFrame.StyledPanel)
+        self.setFrameShape(QFrame.NoFrame)
         
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setAlignment(Qt.AlignCenter)
+        # Get dynamic theme colors
+        c = get_theme_colors()
         
-        icon_label = QLabel()
+        # Define colors based on type
         if type == "error":
-            icon_label.setPixmap(qta.icon('fa5s.times-circle', color=DesignTokens.error_icon).pixmap(16, 16))
-            bg_color = DesignTokens.error_bg
-            text_color = DesignTokens.error_text
-            border_color = DesignTokens.error_border
+            accent_color = c['error_text']
+            bg_color = c['error_bg']
+            icon_name = 'fa5s.exclamation-circle'
         elif type == "success":
-            icon_label.setPixmap(qta.icon('fa5s.check-circle', color=DesignTokens.success_icon).pixmap(16, 16))
-            bg_color = DesignTokens.success_bg
-            text_color = DesignTokens.success_text
-            border_color = DesignTokens.success_border
+            accent_color = c['success_text']
+            bg_color = c['success_bg']
+            icon_name = 'fa5s.check-circle'
         elif type == "warning":
-            icon_label.setPixmap(qta.icon('fa5s.exclamation-triangle', color=DesignTokens.warning_icon).pixmap(16, 16))
-            bg_color = DesignTokens.warning_bg
-            text_color = DesignTokens.warning_text
-            border_color = DesignTokens.warning_border
+            accent_color = c['warning_text']
+            bg_color = c['warning_bg']
+            icon_name = 'fa5s.exclamation-triangle'
         else:
-            icon_label.setPixmap(qta.icon('fa5s.info-circle', color=DesignTokens.info_icon).pixmap(16, 16))
-            bg_color = DesignTokens.info_bg
-            text_color = DesignTokens.info_text
-            border_color = DesignTokens.info_border
-            
-        layout.addWidget(icon_label)
+            accent_color = c['accent']
+            bg_color = c['bg_secondary']
+            icon_name = 'fa5s.info-circle'
         
+        # Main layout with left accent border
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # Left accent bar
+        accent_bar = QFrame()
+        accent_bar.setFixedWidth(4)
+        accent_bar.setStyleSheet(f"background-color: {accent_color}; border-radius: 2px;")
+        main_layout.addWidget(accent_bar)
+        
+        # Content container
+        content_widget = QWidget()
+        content_layout = QHBoxLayout(content_widget)
+        content_layout.setContentsMargins(12, 10, 12, 10)
+        content_layout.setSpacing(10)
+        content_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        
+        # Icon
+        icon_label = QLabel()
+        icon_label.setPixmap(qta.icon(icon_name, color=accent_color).pixmap(18, 18))
+        icon_label.setFixedSize(20, 20)
+        icon_label.setAlignment(Qt.AlignCenter)
+        content_layout.addWidget(icon_label)
+        
+        # Message text
         msg_label = QLabel(text)
-        msg_label.setStyleSheet(f"color: {text_color}; font-weight: 500; font-size: 13px; background: transparent;")
+        msg_label.setStyleSheet(f"""
+            color: {c['text_primary']};
+            font-size: 13px;
+            background: transparent;
+            line-height: 1.5;
+        """)
         msg_label.setWordWrap(True)
         msg_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(msg_label)
+        content_layout.addWidget(msg_label, 1)  # Stretch to fill
         
+        main_layout.addWidget(content_widget, 1)
+        
+        # Apply styles
         self.setStyleSheet(f"""
             QFrame {{
                 background-color: {bg_color};
-                border: 1px solid {border_color};
-                border-radius: 8px;
-                margin: 8px 40px;
+                border: 1px solid {c['border']};
+                border-radius: 6px;
+                margin: 6px 20px;
             }}
         """)
 
@@ -898,39 +940,50 @@ class ChatBubble(QFrame):
         main_layout.setContentsMargins(0, 10, 0, 10)
         main_layout.setSpacing(16)
         
+        # Get theme colors
+        c = get_theme_colors()
+        
         if role == "User":
             main_layout.setAlignment(Qt.AlignRight | Qt.AlignTop)
             
             # 1. Content Wrapper (to push content to right)
             content_wrapper = QWidget()
+            content_wrapper.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
             cw_layout = QVBoxLayout(content_wrapper)
             cw_layout.setContentsMargins(0,0,0,0)
+            cw_layout.setSpacing(0)
             
-            # Bubble Frame
+            # Bubble Frame - Use accent color for gradient
             bubble_frame = QFrame()
             bubble_frame.setStyleSheet(f"""
                 QFrame {{
-                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                                              stop:0 {DesignTokens.primary_gradient_start}, 
-                                              stop:1 {DesignTokens.primary_gradient_end});
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                              stop:0 {c['accent']},
+                                              stop:1 {c['accent']});
                     border-radius: 16px;
                     border-bottom-right-radius: 4px;
                 }}
             """)
             bubble_layout = QVBoxLayout(bubble_frame)
-            bubble_layout.setContentsMargins(16, 12, 16, 12)
-            
+
+            # Adjust padding based on text length (short text = less padding)
+            if len(text) <= 10:
+                bubble_layout.setContentsMargins(12, 6, 12, 6)  # Less padding for short text
+            else:
+                bubble_layout.setContentsMargins(16, 12, 16, 12)  # Normal padding
+
             content_label = QLabel(text)
             content_label.setWordWrap(True)
             content_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            content_label.setStyleSheet("color: #ffffff; font-size: 14px; line-height: 1.6; border: none; background: transparent;")
-            
+            content_label.setStyleSheet(f"color: #ffffff; font-size: 14px; line-height: 1.6; border: none; background: transparent;")
+
             # Smart Width: If text is long, force a minimum width to avoid narrow tall bubbles
             fm = QFontMetrics(content_label.font())
+            text_width = fm.horizontalAdvance(text)
             # Check if text is long enough to warrant a wider bubble
-            if len(text) > 50 or fm.horizontalAdvance(text) > 400:
+            if len(text) > 50 or text_width > 400:
                 content_label.setMinimumWidth(400)
-                
+
             bubble_layout.addWidget(content_label)
             
             cw_layout.addWidget(bubble_frame)
@@ -942,11 +995,11 @@ class ChatBubble(QFrame):
             # Avatar
             avatar = Avatar("User", 40)
             avatar_container = QWidget()
+            avatar_container.setFixedSize(40, 45)  # Fixed size to prevent expansion
             avatar_layout = QVBoxLayout(avatar_container)
             avatar_layout.setContentsMargins(0, 5, 0, 0) # Top margin for alignment
             avatar_layout.setSpacing(0)
             avatar_layout.addWidget(avatar)
-            avatar_layout.addStretch()
             main_layout.addWidget(avatar_container)
 
         else: # Agent
@@ -977,27 +1030,27 @@ class ChatBubble(QFrame):
             
             # Toggle Header
             self.think_toggle_btn = QPushButton(" 思考过程")
-            self.think_toggle_btn.setIcon(qta.icon('fa5s.lightbulb', color=DesignTokens.accent_tool))
+            self.think_toggle_btn.setIcon(qta.icon('fa5s.lightbulb', color=c['accent']))
             self.think_toggle_btn.setCursor(Qt.PointingHandCursor)
             self.think_toggle_btn.setCheckable(True)
             self.think_toggle_btn.setChecked(False)
             self.think_toggle_btn.setStyleSheet(f"""
                 QPushButton {{
                     text-align: left;
-                    background-color: {DesignTokens.bg_main};
-                    color: {DesignTokens.text_secondary};
-                    border: 1px solid {DesignTokens.border};
+                    background-color: {c['bg_main']};
+                    color: {c['text_secondary']};
+                    border: 1px solid {c['border']};
                     border-radius: 12px;
                     padding: 8px 16px;
                     font-size: 13px;
                     font-weight: 500;
-                    margin-bottom: 0px; /* Reduced to connect with container */
+                    margin-bottom: 0px;
                 }}
-                QPushButton:hover {{ background-color: {DesignTokens.bg_secondary}; color: {DesignTokens.text_primary}; border-color: {DesignTokens.border}; }}
+                QPushButton:hover {{ background-color: {c['bg_hover']}; color: {c['text_primary']}; border-color: {c['border']}; }}
                 QPushButton:checked {{ 
-                    background-color: {DesignTokens.bg_secondary}; 
-                    color: {DesignTokens.text_primary}; 
-                    border-color: {DesignTokens.border}; 
+                    background-color: {c['bg_secondary']}; 
+                    color: {c['text_primary']}; 
+                    border-color: {c['border']}; 
                     border-bottom-left-radius: 0; 
                     border-bottom-right-radius: 0; 
                 }}
@@ -1010,9 +1063,9 @@ class ChatBubble(QFrame):
             self.think_container.setVisible(False)
             self.think_container.setStyleSheet(f"""
                 QWidget {{
-                    background: {DesignTokens.bg_secondary};
-                    border: 1px solid {DesignTokens.border};
-                    border-left: 3px solid {DesignTokens.accent_ai};
+                    background: {c['bg_secondary']};
+                    border: 1px solid {c['border']};
+                    border-left: 3px solid {c['accent']};
                     border-top: none;
                     margin-top: -1px;
                     margin-left: 0px;
@@ -1038,7 +1091,7 @@ class ChatBubble(QFrame):
             
             # 2. Main Content
             self.content_edit = AutoResizingTextEdit()
-            self.content_edit.setStyleSheet("background: transparent; border: none; padding: 0;")
+            self.content_edit.setStyleSheet(f"background: transparent; border: none; padding: 0; color: {c['text_primary']};")
             col_layout.addWidget(self.content_edit)
             
             # 3. Sub-Agent Indicators
@@ -1055,8 +1108,8 @@ class ChatBubble(QFrame):
             self.sub_agent_logs.setVisible(False)
             self.sub_agent_logs.setStyleSheet(f"""
                 QStackedWidget {{
-                    background: {DesignTokens.bg_main};
-                    border: 1px solid {DesignTokens.border};
+                    background: {c['bg_main']};
+                    border: 1px solid {c['border']};
                     border-radius: 8px;
                 }}
             """)
@@ -1343,69 +1396,74 @@ class ChatBubble(QFrame):
             self.think_toggle_btn.setChecked(False) # Collapse by default when done
             
     def set_main_content(self, text):
+        # Store the original text for theme updates
+        self._main_content_text = text
         try:
-            # GitHub-like CSS for Markdown
-            style = """
+            # Get theme colors
+            c = get_theme_colors()
+            # GitHub-like CSS for Markdown with theme support
+            style = f"""
             <style>
-               body { 
+               body {{
                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-                   line-height: 1.6; 
-                   color: #1f2937; 
-                   margin: 0; 
+                   line-height: 1.6;
+                   color: {c['text_primary']};
+                   margin: 0;
                    font-size: 14px;
-               }
-               p { margin-top: 0; margin-bottom: 12px; }
-               pre { 
-                   background-color: #f3f4f6; 
-                   padding: 12px; 
-                   border-radius: 6px; 
-                   border: 1px solid #e5e7eb; 
-                   white-space: pre-wrap; 
+                   background-color: transparent;
+               }}
+               p {{ margin-top: 0; margin-bottom: 12px; }}
+               pre {{
+                   background-color: {c['bg_secondary']};
+                   padding: 12px;
+                   border-radius: 6px;
+                   border: 1px solid {c['border']};
+                   white-space: pre-wrap;
                    margin-bottom: 12px;
                    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-               }
-               code { 
-                   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; 
-                   font-size: 90%; 
-                   padding: 0.2em 0.4em; 
-                   background-color: #f3f4f6; 
-                   border-radius: 4px; 
-               }
-               h1, h2, h3 { color: #111827; font-weight: 600; margin-top: 24px; margin-bottom: 12px; }
-               h1 { font-size: 1.5em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
-               h2 { font-size: 1.3em; }
-               a { color: #2563eb; text-decoration: none; }
-               blockquote { 
-                   border-left: 3px solid #d1d5db; 
-                   color: #4b5563; 
-                   padding-left: 1em; 
-                   margin: 0 0 16px 0; 
-               }
-               table { 
-                   border-collapse: separate; 
-                   border-spacing: 0; 
-                   width: 100%; 
-                   margin-bottom: 16px; 
-                   font-size: 13px; 
-                   border: 1px solid #e5e7eb;
+               }}
+               code {{
+                   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                   font-size: 90%;
+                   padding: 0.2em 0.4em;
+                   background-color: {c['bg_secondary']};
+                   border-radius: 4px;
+               }}
+               h1, h2, h3 {{ color: {c['text_primary']}; font-weight: 600; margin-top: 24px; margin-bottom: 12px; }}
+               h1 {{ font-size: 1.5em; border-bottom: 1px solid {c['border']}; padding-bottom: 0.3em; }}
+               h2 {{ font-size: 1.3em; }}
+               a {{ color: {c['accent']}; text-decoration: none; }}
+               blockquote {{
+                   border-left: 3px solid {c['border']};
+                   color: {c['text_secondary']};
+                   padding-left: 1em;
+                   margin: 0 0 16px 0;
+               }}
+               table {{
+                   border-collapse: separate;
+                   border-spacing: 0;
+                   width: 100%;
+                   margin-bottom: 16px;
+                   font-size: 13px;
+                   border: 1px solid {c['border']};
                    border-radius: 6px;
                    overflow: hidden;
-               }
-               th, td { 
-                   border-bottom: 1px solid #e5e7eb; 
-                   border-right: 1px solid #e5e7eb; 
-                   padding: 8px 12px; 
-                   text-align: left; 
-               }
-               th { 
-                   background-color: #f8fafc; 
-                   font-weight: 600; 
-                   color: #4b5563;
-                   border-bottom: 1px solid #e5e7eb;
-               }
-               tr:last-child td { border-bottom: none; }
-               tr:hover td { background-color: #f8fafc; }
-               th:last-child, td:last-child { border-right: none; }
+               }}
+               th, td {{
+                   border-bottom: 1px solid {c['border']};
+                   border-right: 1px solid {c['border']};
+                   padding: 8px 12px;
+                   text-align: left;
+               }}
+               th {{
+                   background-color: {c['bg_secondary']};
+                   font-weight: 600;
+                   color: {c['text_primary']};
+                   border-bottom: 1px solid {c['border']};
+               }}
+               tr:last-child td {{ border-bottom: none; }}
+               tr:hover td {{ background-color: {c['bg_hover']}; }}
+               th:last-child, td:last-child {{ border-right: none; }}
             </style>
             """
             html_content = markdown.markdown(text, extensions=['fenced_code', 'tables', 'nl2br', 'sane_lists'])
@@ -1429,6 +1487,61 @@ class ChatBubble(QFrame):
         if not self.think_toggle_btn.isChecked():
             self.think_toggle_btn.setChecked(True)
 
+    def update_theme(self):
+        """Update styles when theme changes."""
+        if self.role != "User":
+            c = get_theme_colors()
+            # Update think_toggle_btn style
+            self.think_toggle_btn.setStyleSheet(f"""
+                QPushButton {{
+                    text-align: left;
+                    background-color: {c['bg_main']};
+                    color: {c['text_secondary']};
+                    border: 1px solid {c['border']};
+                    border-radius: 12px;
+                    padding: 8px 16px;
+                    font-size: 13px;
+                    font-weight: 500;
+                    margin-bottom: 0px;
+                }}
+                QPushButton:hover {{ background-color: {c['bg_hover']}; color: {c['text_primary']}; border-color: {c['border']}; }}
+                QPushButton:checked {{
+                    background-color: {c['bg_secondary']};
+                    color: {c['text_primary']};
+                    border-color: {c['border']};
+                    border-bottom-left-radius: 0;
+                    border-bottom-right-radius: 0;
+                }}
+            """)
+            # Update think_container style
+            self.think_container.setStyleSheet(f"""
+                QWidget {{
+                    background: {c['bg_secondary']};
+                    border: 1px solid {c['border']};
+                    border-left: 3px solid {c['accent']};
+                    border-top: none;
+                    margin-top: -1px;
+                    margin-left: 0px;
+                    border-bottom-left-radius: 12px;
+                    border-bottom-right-radius: 12px;
+                }}
+            """)
+            # Update sub_agent_logs style
+            if hasattr(self, 'sub_agent_logs'):
+                self.sub_agent_logs.setStyleSheet(f"""
+                    QStackedWidget {{
+                        background: {c['bg_main']};
+                        border: 1px solid {c['border']};
+                        border-radius: 8px;
+                    }}
+                """)
+            # Update content_edit style
+            if hasattr(self, 'content_edit'):
+                self.content_edit.setStyleSheet(f"background: transparent; border: none; padding: 0; color: {c['text_primary']};")
+            # Re-render main content with new theme
+            if hasattr(self, '_main_content_text') and self._main_content_text:
+                self.set_main_content(self._main_content_text)
+
 class ToolCallCard(QFrame):
     clicked = Signal(str, str, str) # tool_id, args, result
 
@@ -1440,6 +1553,9 @@ class ToolCallCard(QFrame):
         self.tool_name = tool_name
         self.is_selected = False
         
+        # Get theme colors
+        c = get_theme_colors()
+        
         self.setFocusPolicy(Qt.StrongFocus)
         
         self.setFrameShape(QFrame.NoFrame)
@@ -1449,7 +1565,7 @@ class ToolCallCard(QFrame):
                 background-color: transparent;
                 border: none;
                 margin: 0;
-                padding-left: 10px; /* Space for timeline line if we want to draw it externally, or just indent */
+                padding-left: 10px;
             }
         """)
         
@@ -1462,12 +1578,14 @@ class ToolCallCard(QFrame):
         self.main_row.setCursor(Qt.PointingHandCursor)
         self.main_row.setStyleSheet(f"""
             QFrame {{
-                background-color: transparent;
+                background-color: {c['bg_secondary']};
                 border-radius: 6px;
                 padding: 4px;
+                border: 1px solid {c['border']};
             }}
             QFrame:hover {{
-                background-color: {DesignTokens.bg_secondary};
+                background-color: {c['bg_hover']};
+                border-color: {c['accent']};
             }}
         """)
         # Make the whole card clickable
@@ -1488,61 +1606,64 @@ class ToolCallCard(QFrame):
         
         # Icon with base
         self.icon_label = QLabel()
-        self.icon_label.setPixmap(qta.icon(icon_name, color=DesignTokens.accent_tool).pixmap(14, 14))
+        self.icon_label.setPixmap(qta.icon(icon_name, color=c['accent']).pixmap(14, 14))
         self.icon_label.setFixedSize(24, 24)
         self.icon_label.setAlignment(Qt.AlignCenter)
         self.icon_label.setStyleSheet(f"""
-            background-color: {DesignTokens.bg_secondary};
-            border: 1px solid {DesignTokens.border};
+            background-color: {c['bg_secondary']};
+            border: 1px solid {c['border']};
             border-radius: 12px; 
         """)
         
         # 2. Text Content
-        text_container = QWidget()
-        text_container.setStyleSheet("background: transparent; border: none;")
-        text_layout = QVBoxLayout(text_container)
+        self.text_container = QWidget()
+        self.text_container.setStyleSheet(f"background-color: {c['bg_secondary']}; border: none;")
+        text_layout = QVBoxLayout(self.text_container)
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(2)
-        
+
         # Title
         name_label = QLabel(f"{tool_name}")
-        name_label.setStyleSheet(f"font-weight: 600; color: {DesignTokens.text_primary}; font-size: 13px; border: none;")
-        
+        name_label.setStyleSheet(f"font-weight: 600; color: {c['text_primary']}; font-size: 13px; border: none; background: transparent;")
+
         # Subtitle (Short Args Summary)
         short_args = str(args)
         if len(short_args) > 80:
             short_args = short_args[:80] + "..."
         args_preview = QLabel(short_args)
-        args_preview.setStyleSheet(f"color: {DesignTokens.text_secondary}; font-size: 11px; border: none; font-family: 'Consolas', monospace;")
-        
+        args_preview.setWordWrap(True)
+        args_preview.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        args_preview.setStyleSheet(f"color: {c['text_secondary']}; font-size: 11px; border: none; font-family: 'Consolas', monospace; background: transparent;")
+
         text_layout.addWidget(name_label)
         text_layout.addWidget(args_preview)
         
         # 3. Right Side Controls
         self.status_icon = QLabel() # Default running
-        self.status_icon.setPixmap(qta.icon('fa5s.spinner', color=DesignTokens.text_secondary, animation=qta.Spin(self.status_icon)).pixmap(14, 14))
+        self.status_icon.setPixmap(qta.icon('fa5s.spinner', color=c['text_secondary'], animation=qta.Spin(self.status_icon)).pixmap(14, 14))
         self.status_icon.setStyleSheet("border: none; background: transparent;")
         
-        self.view_btn = QPushButton("详情") # Minimalist text
+        self.view_btn = QPushButton("详情")
         self.view_btn.setCursor(Qt.PointingHandCursor)
-        self.view_btn.setFixedWidth(36)
+        self.view_btn.setFixedWidth(48)  # 增加宽度避免文字截断
         self.view_btn.setToolTip("查看详情")
         self.view_btn.setStyleSheet(f"""
             QPushButton {{
                 border: none;
                 border-radius: 4px;
-                color: {DesignTokens.text_tertiary};
+                color: {c['text_tertiary']};
                 font-size: 11px;
+                padding: 4px 8px;
             }}
             QPushButton:hover {{
-                color: {DesignTokens.primary};
-                background: {DesignTokens.bg_secondary};
+                color: {c['accent']};
+                background: {c['bg_hover']};
             }}
         """)
         self.view_btn.clicked.connect(lambda: self.clicked.emit(self.tool_id, str(self.args), str(self.result)))
 
         row_layout.addWidget(self.icon_label)
-        row_layout.addWidget(text_container, 1) # Expand
+        row_layout.addWidget(self.text_container, 1) # Expand
         row_layout.addWidget(self.status_icon)
         row_layout.addWidget(self.view_btn)
         
@@ -1620,12 +1741,13 @@ class ToolCallCard(QFrame):
         widgets["status_label"].setStyleSheet(style)
 
     def focusInEvent(self, event):
+        c = get_theme_colors()
         if not self.is_selected:
             self.main_row.setStyleSheet(f"""
                 QFrame {{
-                    background-color: {DesignTokens.bg_main};
-                    border: 1px solid {DesignTokens.primary};
-                    border-left: 3px solid {DesignTokens.primary};
+                    background-color: {c['bg_main']};
+                    border: 1px solid {c['accent']};
+                    border-left: 3px solid {c['accent']};
                     border-radius: 6px;
                 }}
             """)
@@ -1645,53 +1767,55 @@ class ToolCallCard(QFrame):
         self.clicked.emit(self.tool_id, str(self.args), str(self.result))
 
     def set_selected(self, selected):
+        c = get_theme_colors()
         self.is_selected = selected
         if selected:
-            # Selected: Blue Border + Light Blue BG
+            # Selected: Accent Border + Light BG
             self.main_row.setStyleSheet(f"""
                 QFrame {{
-                    background-color: {DesignTokens.info_bg};
-                    border: 1px solid {DesignTokens.primary};
-                    border-left: 3px solid {DesignTokens.primary};
+                    background-color: {c['bg_secondary']};
+                    border: 1px solid {c['accent']};
+                    border-left: 3px solid {c['accent']};
                     border-radius: 6px;
                 }}
             """)
         else:
             # Normal: Border Color based on Status
-            left_color = DesignTokens.success_accent if self.result else DesignTokens.text_tertiary
+            left_color = c['success_text'] if self.result else c['text_tertiary']
             self.main_row.setStyleSheet(f"""
                 QFrame {{
-                    background-color: {DesignTokens.bg_main};
-                    border: 1px solid {DesignTokens.border};
+                    background-color: {c['bg_secondary']};
+                    border: 1px solid {c['border']};
                     border-left: 3px solid {left_color};
                     border-radius: 6px;
                 }}
                 QFrame:hover {{
-                    background-color: {DesignTokens.bg_secondary};
-                    border-color: {DesignTokens.text_secondary};
-                    border-left-color: {DesignTokens.text_secondary};
+                    background-color: {c['bg_hover']};
+                    border-color: {c['accent']};
                 }}
             """)
 
     def set_result(self, result_text):
-        self.status_icon.setPixmap(qta.icon('fa5s.check-circle', color=DesignTokens.success_accent).pixmap(14, 14))
+        c = get_theme_colors()
+        self.status_icon.setPixmap(qta.icon('fa5s.check-circle', color=c['success_text']).pixmap(14, 14))
         self.result = result_text
-        
-        # Update style to show success (Green left border)
-        if not self.is_selected:
-            self.main_row.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {DesignTokens.bg_main};
-                    border: 1px solid {DesignTokens.border};
-                    border-left: 3px solid {DesignTokens.success_accent};
-                    border-radius: 6px;
-                }}
-                QFrame:hover {{
-                    background-color: {DesignTokens.bg_secondary};
-                    border-color: {DesignTokens.text_secondary};
-                    border-left-color: {DesignTokens.success_accent};
-                }}
-            """)
+
+    def update_theme(self):
+        """Update styles when theme changes."""
+        c = get_theme_colors()
+        # Update main_row style based on current state
+        self.set_selected(self.is_selected)
+        # Update icon_label
+        self.icon_label.setStyleSheet(f"""
+            background-color: {c['bg_secondary']};
+            border: 1px solid {c['border']};
+            border-radius: 12px;
+        """)
+        # Update text_container
+        self.text_container.setStyleSheet(f"background-color: {c['bg_secondary']}; border: none;")
+        # Update sub_agents_container if visible
+        if hasattr(self, 'sub_agents_container'):
+            self.sub_agents_container.setStyleSheet(f"background: transparent; border: none;")
 
 class SubAgentMonitor(QWidget):
     def __init__(self, parent=None):
@@ -2035,80 +2159,8 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self.workspace_dir = None
         
-        # Apply Clean Light Theme manually for optimized components
-        self.setStyleSheet("""
-            QMainWindow { background-color: #ffffff; }
-            QLabel[roleTitle="true"] { font-size: 18px; font-weight: 600; color: #111827; }
-            QLabel[roleSubtitle="true"] { font-size: 13px; color: #6b7280; }
-            QTextEdit#MainInput {
-                padding: 12px 16px;
-                border-radius: 24px;
-                border: 1px solid #e2e8f0;
-                background: #ffffff;
-                font-size: 14px;
-                color: #1e293b;
-            }
-            QTextEdit#MainInput:focus {
-                border: 1px solid #3b82f6;
-                background: #ffffff;
-            }
-            QScrollArea { border: none; background: transparent; }
-            QTabWidget::pane { border: none; }
-            QTabBar::tab {
-                background: transparent;
-                padding: 8px 16px;
-                margin-right: 4px;
-                border-radius: 6px;
-                color: #6b7280;
-            }
-            QTabBar::tab:selected {
-                background: #eff6ff;
-                color: #2563eb;
-                font-weight: bold;
-            }
-
-            /* Global Scrollbar Beautification */
-            QScrollBar:vertical {
-                border: none;
-                background: transparent;
-                width: 6px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #e5e7eb;
-                min-height: 20px;
-                border-radius: 3px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #d1d5db;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: transparent;
-            }
-            QScrollBar:horizontal {
-                border: none;
-                background: transparent;
-                height: 6px;
-                margin: 0px;
-            }
-            QScrollBar::handle:horizontal {
-                background: #e5e7eb;
-                min-width: 20px;
-                border-radius: 3px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background: #d1d5db;
-            }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                width: 0px;
-            }
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                background: transparent;
-            }
-        """)
+        # Apply dynamic theme stylesheet
+        self.setStyleSheet(get_main_window_stylesheet())
         
         self.sessions = {}
         self.current_session_id = None
@@ -2148,8 +2200,7 @@ class MainWindow(QMainWindow):
         sidebar = QWidget()
         sidebar.setObjectName("Sidebar")
         # sidebar.setMinimumWidth(200) # Removed to allow collapsing
-        # sidebar.setStyleSheet("background-color: #f9fafb; border-right: 1px solid #e5e7eb;")
-        sidebar.setStyleSheet(f"background-color: {DesignTokens.bg_secondary}; border-right: 1px solid {DesignTokens.border};")
+        sidebar.setStyleSheet(get_sidebar_style())
         
         # Lower sidebar weight: Removed shadow
         # sidebar.setGraphicsEffect(None) 
@@ -2169,23 +2220,14 @@ class MainWindow(QMainWindow):
         new_chat_btn = QPushButton(" 新建对话")
         new_chat_btn.setIcon(qta.icon('fa5s.plus', color='#ffffff'))
         new_chat_btn.setCursor(Qt.PointingHandCursor)
-        new_chat_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #3b82f6; 
-                color: white; 
-                border-radius: 8px; 
-                padding: 10px 16px;
-                font-weight: bold;
-                border: none;
-            }
-            QPushButton:hover { background-color: #2563eb; }
-        """)
+        new_chat_btn.setStyleSheet(get_new_chat_button_style())
         new_chat_btn.clicked.connect(self.new_conversation)
         sidebar_layout.addWidget(new_chat_btn)
 
         # History List
         history_label = QLabel("历史会话")
-        history_label.setStyleSheet("color: #6b7280; font-size: 12px; font-weight: 600; margin-top: 12px;")
+        c = get_theme_colors()
+        history_label.setStyleSheet(f"color: {c['text_secondary']}; font-size: 12px; font-weight: 600; margin-top: 12px;")
         sidebar_layout.addWidget(history_label)
 
         self.history_scroll = QScrollArea()
@@ -2201,20 +2243,17 @@ class MainWindow(QMainWindow):
         sidebar_footer_label.setProperty("roleSubtitle", True)
         sidebar_layout.addWidget(sidebar_footer_label)
         
-        sidebar_btn_style = """
-            QPushButton { text-align: left; padding: 8px; border: none; color: #4b5563; background: transparent; border-radius: 6px; }
-            QPushButton:hover { background-color: #e5e7eb; color: #111827; }
-        """
+        sidebar_btn_style = get_sidebar_button_style()
         
         sidebar_settings_btn = QPushButton(" 系统设置")
-        sidebar_settings_btn.setIcon(qta.icon('fa5s.cog', color='#4b5563'))
+        sidebar_settings_btn.setIcon(qta.icon('fa5s.cog', color=c['text_secondary']))
         sidebar_settings_btn.setCursor(Qt.PointingHandCursor)
         sidebar_settings_btn.setStyleSheet(sidebar_btn_style)
         sidebar_settings_btn.clicked.connect(self.open_settings)
         sidebar_layout.addWidget(sidebar_settings_btn)
         
         sidebar_skills_btn = QPushButton(" 功能中心")
-        sidebar_skills_btn.setIcon(qta.icon('fa5s.puzzle-piece', color='#4b5563'))
+        sidebar_skills_btn.setIcon(qta.icon('fa5s.puzzle-piece', color=c['text_secondary']))
         sidebar_skills_btn.setCursor(Qt.PointingHandCursor)
         sidebar_skills_btn.setStyleSheet(sidebar_btn_style)
         sidebar_skills_btn.clicked.connect(self.open_skills_center)
@@ -2225,13 +2264,13 @@ class MainWindow(QMainWindow):
         # --- Main Content ---
         main_container = QWidget()
         main_container.setObjectName("MainContainer")
-        main_container.setMinimumWidth(400) # Protect main content
+        main_container.setMinimumWidth(300) # Allow smaller width for flexibility
         self.main_splitter.addWidget(main_container)
 
         # Right Sidebar (Workspace File Tree)
         self.right_sidebar = QWidget()
-        # self.right_sidebar.setMinimumWidth(200) # Removed to allow collapsing
-        self.right_sidebar.setStyleSheet("background-color: #ffffff; border-left: 1px solid #e5e7eb;")
+        self.right_sidebar.setMinimumWidth(200)  # Allow collapsing but keep minimum
+        self.right_sidebar.setStyleSheet(get_right_sidebar_style())
         self.right_sidebar.setVisible(False)
         
         right_layout = QVBoxLayout(self.right_sidebar)
@@ -2240,24 +2279,7 @@ class MainWindow(QMainWindow):
         
         # Right Sidebar Tabs (Workspace / Tool Details)
         self.right_tabs = QTabWidget()
-        self.right_tabs.setStyleSheet("""
-            QTabWidget::pane { border: none; }
-            QTabBar::tab {
-                background: transparent;
-                padding: 8px 12px;
-                margin-right: 2px;
-                border-bottom: 2px solid transparent;
-                color: #6b7280;
-                font-weight: 500;
-            }
-            QTabBar::tab:selected {
-                color: #2563eb;
-                border-bottom: 2px solid #2563eb;
-            }
-            QTabBar::tab:hover {
-                background: #f3f4f6;
-            }
-        """)
+        self.right_tabs.setStyleSheet(get_right_tabs_style())
         
         # Tab 1: Workspace Files
         self.workspace_tab = QWidget()
@@ -2275,11 +2297,7 @@ class MainWindow(QMainWindow):
         self.file_tree.setRootIndex(self.file_model.index(""))
         self.file_tree.setHeaderHidden(True)
         for i in range(1, 4): self.file_tree.setColumnHidden(i, True)
-        self.file_tree.setStyleSheet("""
-             QTreeView { border: none; } 
-             QTreeView::item { padding: 4px; }
-             QTreeView::item:selected { background-color: #eff6ff; color: #1d4ed8; }
-        """)
+        self.file_tree.setStyleSheet(get_file_tree_style())
         self.file_tree.clicked.connect(self.on_file_clicked)
         self.file_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.file_tree.customContextMenuRequested.connect(self.show_file_context_menu)
@@ -2287,22 +2305,28 @@ class MainWindow(QMainWindow):
         self.right_inner_splitter.addWidget(self.file_tree)
         
         # Preview Area in Workspace Tab
-        preview_container = QWidget()
-        preview_layout = QVBoxLayout(preview_container)
+        self.preview_container = QWidget()
+        c = get_theme_colors()
+        self.preview_container.setStyleSheet(f"background-color: {c['bg_main']};")
+        preview_layout = QVBoxLayout(self.preview_container)
         preview_layout.setContentsMargins(0, 0, 0, 0)
         preview_layout.setSpacing(0)
         
-        r_preview_header = QLabel("  内容预览")
-        r_preview_header.setStyleSheet("font-weight: 600; color: #4b5563; padding: 8px 12px; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; background: #f9fafb;")
-        preview_layout.addWidget(r_preview_header)
+        self.r_preview_header = QLabel("  内容预览")
+        self.r_preview_header.setStyleSheet(get_preview_header_style())
+        preview_layout.addWidget(self.r_preview_header)
         
         self.preview_stack = QStackedWidget()
+        self.preview_stack.setStyleSheet(f"background-color: {c['bg_main']};")
         self.preview_text = ReadOnlyTextEdit()
         # self.preview_text.setReadOnly(True) # Handled by class
-        self.preview_text.setStyleSheet("border: none; padding: 8px; color: #374151; font-family: 'Consolas', monospace; font-size: 11px;")
+        self.preview_text.setStyleSheet(f"border: none; padding: 8px; color: {c['text_primary']}; font-family: 'Consolas', monospace; font-size: 11px; background-color: {c['bg_main']};")
         self.preview_text.setPlaceholderText("点击文件预览内容...")
         self.preview_image = QLabel()
         self.preview_image.setAlignment(Qt.AlignCenter)
+        self.preview_image.setStyleSheet(f"background-color: {c['bg_main']};")
+        # Limit image size to prevent layout expansion
+        self.preview_image.setMaximumSize(400, 300)
         self.preview_stack.addWidget(self.preview_text)
         self.preview_stack.addWidget(self.preview_image)
         self.preview_stack.setCurrentWidget(self.preview_text)
@@ -2310,7 +2334,7 @@ class MainWindow(QMainWindow):
         
         preview_layout.addWidget(self.preview_stack)
         
-        self.right_inner_splitter.addWidget(preview_container)
+        self.right_inner_splitter.addWidget(self.preview_container)
         self.right_inner_splitter.setStretchFactor(0, 2)
         self.right_inner_splitter.setStretchFactor(1, 1)
         
@@ -2325,52 +2349,33 @@ class MainWindow(QMainWindow):
         td_layout.setSpacing(12)
         
         td_header = QLabel("工具调用详情")
-        td_header.setStyleSheet("font-size: 14px; font-weight: bold; color: #111827;")
+        td_styles = get_tool_details_style()
+        td_header.setStyleSheet(td_styles['header'])
         td_layout.addWidget(td_header)
         
         # Tool ID / Name
         self.td_info_label = QLabel("选择左侧工具卡片查看详情")
-        self.td_info_label.setStyleSheet("color: #6b7280; font-size: 12px;")
+        self.td_info_label.setStyleSheet(td_styles['info'])
         td_layout.addWidget(self.td_info_label)
         
         # Args
         td_args_label = QLabel("Arguments:")
-        td_args_label.setStyleSheet("font-size: 12px; font-weight: 600; color: #374151; margin-top: 8px;")
+        td_args_label.setStyleSheet(td_styles['label'])
         td_layout.addWidget(td_args_label)
         
         self.td_args_edit = ReadOnlyTextEdit()
         # self.td_args_edit.setReadOnly(True)
-        self.td_args_edit.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #e5e7eb;
-                border-radius: 6px;
-                background: #f9fafb;
-                color: #374151;
-                font-family: 'Consolas', monospace;
-                font-size: 11px;
-                padding: 8px;
-            }
-        """)
+        self.td_args_edit.setStyleSheet(td_styles['input'])
         td_layout.addWidget(self.td_args_edit, 1)
         
         # Result
         td_result_label = QLabel("Result:")
-        td_result_label.setStyleSheet("font-size: 12px; font-weight: 600; color: #374151; margin-top: 8px;")
+        td_result_label.setStyleSheet(td_styles['label'])
         td_layout.addWidget(td_result_label)
         
         self.td_result_edit = ReadOnlyTextEdit()
         # self.td_result_edit.setReadOnly(True)
-        self.td_result_edit.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #e5e7eb;
-                border-radius: 6px;
-                background: #f9fafb;
-                color: #374151;
-                font-family: 'Consolas', monospace;
-                font-size: 11px;
-                padding: 8px;
-            }
-        """)
+        self.td_result_edit.setStyleSheet(td_styles['result'])
         td_layout.addWidget(self.td_result_edit, 2)
         
         self.right_tabs.addTab(self.tool_details_tab, "工具详情")
@@ -2406,32 +2411,33 @@ class MainWindow(QMainWindow):
         top_bar.addStretch()
         
         # Workspace Selector
-        ws_container = QFrame()
-        ws_container.setStyleSheet("background: #f3f4f6; border-radius: 8px; padding: 4px;")
-        ws_layout = QHBoxLayout(ws_container)
+        self.ws_container = QFrame()
+        c = get_theme_colors()
+        self.ws_container.setStyleSheet(get_workspace_selector_style())
+        ws_layout = QHBoxLayout(self.ws_container)
         ws_layout.setContentsMargins(8, 4, 8, 4)
         
         self.ws_label = QLabel("当前文件夹: 未选择")
-        self.ws_label.setStyleSheet("color: #6b7280; font-weight: 500;")
+        self.ws_label.setStyleSheet(f"color: {c['text_secondary']}; font-weight: 500;")
         
         self.recent_btn = QPushButton()
-        self.recent_btn.setIcon(qta.icon('fa5s.history', color='#6b7280'))
+        self.recent_btn.setIcon(qta.icon('fa5s.history', color=c['text_secondary']))
         self.recent_btn.setToolTip("最近使用的文件夹")
         self.recent_btn.setFixedWidth(32)
         self.recent_btn.setCursor(Qt.PointingHandCursor)
-        self.recent_btn.setStyleSheet("border: none; background: transparent;")
+        self.recent_btn.setStyleSheet(f"border: none; background: transparent; color: {c['text_secondary']};")
         self.recent_btn.clicked.connect(self.show_recent_menu)
         
         self.ws_btn = QPushButton(" 切换")
-        self.ws_btn.setIcon(qta.icon('fa5s.folder-open', color='#374151'))
+        self.ws_btn.setIcon(qta.icon('fa5s.folder-open', color=c['text_primary']))
         self.ws_btn.setCursor(Qt.PointingHandCursor)
-        self.ws_btn.setStyleSheet("background: white; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 12px; color: #374151;")
+        self.ws_btn.setStyleSheet(f"background: {c['bg_main']}; border: 1px solid {c['border']}; border-radius: 6px; padding: 4px 12px; color: {c['text_primary']};")
         self.ws_btn.clicked.connect(self.select_workspace)
         
         ws_layout.addWidget(self.ws_label)
         ws_layout.addWidget(self.recent_btn)
         ws_layout.addWidget(self.ws_btn)
-        top_bar.addWidget(ws_container)
+        top_bar.addWidget(self.ws_container)
         
         layout.addLayout(top_bar)
         
@@ -2463,11 +2469,25 @@ class MainWindow(QMainWindow):
         self.pause_btn.setVisible(False)
         self.pause_btn.setStyleSheet("border: none; font-size: 16px;")
         
+        c = get_theme_colors()
         self.action_btn = QPushButton("发送")
         self.action_btn.setIcon(qta.icon('fa5s.paper-plane', color='white'))
         self.action_btn.setCursor(Qt.PointingHandCursor)
-        self.action_btn.setFixedSize(60, 36)
-        self.action_btn.setStyleSheet("background-color: #4d6bfe; color: white; border-radius: 18px; font-weight: bold; border: none;")
+        self.action_btn.setFixedSize(72, 36)  # 增加宽度避免文字截断
+        self.action_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {c['accent']};
+                color: white;
+                border-radius: 18px;
+                font-weight: bold;
+                border: none;
+                padding: 0 12px;
+            }}
+            QPushButton:hover {{
+                background-color: {c['accent']};
+                opacity: 0.9;
+            }}
+        """)
         self.action_btn.clicked.connect(self.on_action_clicked)
         
         self.loop_hint = QPushButton(" 循环中")
@@ -2508,6 +2528,192 @@ class MainWindow(QMainWindow):
         
         # Update UI state based on workspace
         self.update_ui_state_for_workspace()
+        
+        # Setup theme change monitoring
+        self._setup_theme_monitoring()
+
+    def _setup_theme_monitoring(self):
+        """设置主题变化监听，当系统主题变化时自动切换（仅在auto模式下）。"""
+        from core.theme import theme_manager
+        theme_manager.theme_changed.connect(self._on_theme_changed)
+        
+        # Windows系统主题变化监听
+        if platform.system() == "Windows":
+            self._theme_timer = QTimer(self)
+            self._theme_timer.timeout.connect(self._check_system_theme_change)
+            self._theme_timer.start(2000)  # 每2秒检查一次
+            self._last_system_theme = None
+
+    def _check_system_theme_change(self):
+        """检查系统主题是否发生变化。"""
+        from core.theme import theme_manager, apply_theme
+        from PySide6.QtWidgets import QApplication
+        
+        # 只有在auto模式下才自动切换
+        if self.config_manager.get_theme() != "auto":
+            return
+        
+        current_system_theme = theme_manager.get_windows_system_theme()
+        
+        if self._last_system_theme is None:
+            self._last_system_theme = current_system_theme
+            return
+        
+        if current_system_theme != self._last_system_theme:
+            self._last_system_theme = current_system_theme
+            app = QApplication.instance()
+            if app:
+                apply_theme(app, "auto")
+
+    def _on_theme_changed(self, theme):
+        """主题变更时的回调，更新所有UI元素样式。"""
+        c = get_theme_colors(theme)
+        
+        # 更新主窗口样式表
+        self.setStyleSheet(get_main_window_stylesheet(theme))
+        
+        # 更新侧边栏样式
+        sidebar = self.findChild(QWidget, "Sidebar")
+        if sidebar:
+            sidebar.setStyleSheet(get_sidebar_style(theme))
+        
+        # 更新右侧边栏样式
+        if self.right_sidebar:
+            self.right_sidebar.setStyleSheet(get_right_sidebar_style(theme))
+        
+        # 更新右侧标签页样式
+        if self.right_tabs:
+            self.right_tabs.setStyleSheet(get_right_tabs_style(theme))
+        
+        # 更新文件树样式
+        if self.file_tree:
+            self.file_tree.setStyleSheet(get_file_tree_style(theme))
+        
+        # 更新预览区域样式
+        if hasattr(self, 'preview_container') and self.preview_container:
+            self.preview_container.setStyleSheet(f"background-color: {c['bg_main']};")
+        if hasattr(self, 'preview_stack') and self.preview_stack:
+            self.preview_stack.setStyleSheet(f"background-color: {c['bg_main']};")
+        if hasattr(self, 'preview_text') and self.preview_text:
+            self.preview_text.setStyleSheet(f"border: none; padding: 8px; color: {c['text_primary']}; font-family: 'Consolas', monospace; font-size: 11px; background-color: {c['bg_main']};")
+        if hasattr(self, 'preview_image') and self.preview_image:
+            self.preview_image.setStyleSheet(f"background-color: {c['bg_main']};")
+        if hasattr(self, 'r_preview_header') and self.r_preview_header:
+            self.r_preview_header.setStyleSheet(get_preview_header_style(theme))
+        
+        # 更新工作区选择器样式
+        if hasattr(self, 'ws_container') and self.ws_container:
+            self.ws_container.setStyleSheet(get_workspace_selector_style(theme))
+        if self.ws_label:
+            if self.workspace_dir:
+                self.ws_label.setStyleSheet(f"color: {c['success_text']}; font-weight: 600;")
+            else:
+                self.ws_label.setStyleSheet(f"color: {c['text_secondary']}; font-weight: 500;")
+        if hasattr(self, 'recent_btn') and self.recent_btn:
+            self.recent_btn.setStyleSheet(f"border: none; background: transparent; color: {c['text_secondary']};")
+            self.recent_btn.setIcon(qta.icon('fa5s.history', color=c['text_secondary']))
+        if hasattr(self, 'ws_btn') and self.ws_btn:
+            self.ws_btn.setStyleSheet(f"background: {c['bg_main']}; border: 1px solid {c['border']}; border-radius: 6px; padding: 4px 12px; color: {c['text_primary']};")
+            self.ws_btn.setIcon(qta.icon('fa5s.folder-open', color=c['text_primary']))
+        
+        # 更新历史会话按钮样式
+        self.refresh_history_list()
+        
+        # 更新菜单样式
+        global MENU_STYLESHEET
+        MENU_STYLESHEET = get_menu_stylesheet(theme)
+
+        # 更新所有 EmptyStateWidget
+        for session_id, state in self.sessions.items():
+            if hasattr(state, 'empty_state') and state.empty_state:
+                # 重新创建 EmptyStateWidget 以应用新主题
+                state.empty_state.styles = get_empty_state_style(theme)
+                # 更新快捷按钮样式
+                for btn in state.empty_state.action_cards:
+                    btn.setStyleSheet(state.empty_state.styles['card'])
+                    # 更新按钮内的标签
+                    for child in btn.findChildren(QLabel):
+                        if child.text() in [a[0] for a in state.empty_state.actions_data]:
+                            child.setStyleSheet(state.empty_state.styles['card_title'])
+                        else:
+                            child.setStyleSheet(state.empty_state.styles['card_desc'])
+
+        # 更新所有 ToolCallCard 样式
+        for session_id, state in self.sessions.items():
+            if hasattr(state, 'tool_cards') and state.tool_cards:
+                for tool_id, card in state.tool_cards.items():
+                    if card and hasattr(card, 'update_theme'):
+                        card.update_theme()
+
+        # 更新所有 ChatBubble 样式
+        for session_id, state in self.sessions.items():
+            if hasattr(state, 'chat_layout') and state.chat_layout:
+                for i in range(state.chat_layout.count()):
+                    item = state.chat_layout.itemAt(i)
+                    if item and item.widget():
+                        widget = item.widget()
+                        if isinstance(widget, ChatBubble) and hasattr(widget, 'update_theme'):
+                            widget.update_theme()
+
+        # 更新工具详情区域样式
+        td_styles = get_tool_details_style(theme)
+        if hasattr(self, 'td_info_label') and self.td_info_label:
+            self.td_info_label.setStyleSheet(td_styles['info'])
+        if hasattr(self, 'td_args_edit') and self.td_args_edit:
+            self.td_args_edit.setStyleSheet(td_styles['input'])
+        if hasattr(self, 'td_result_edit') and self.td_result_edit:
+            self.td_result_edit.setStyleSheet(td_styles['result'])
+
+    def _on_font_size_changed(self, font_size):
+        """字体大小变更时的回调，更新所有相关控件。"""
+        # 获取字体大小配置
+        font_config = get_font_size(font_size)
+        padding_config = get_padding(font_size)
+        
+        # 更新主窗口样式表（包含输入框样式）
+        self.setStyleSheet(get_main_window_stylesheet(self.config_manager.get_theme()))
+        
+        # 更新输入框的最小/最大高度以适应新字体
+        if hasattr(self, 'input_field') and self.input_field:
+            # 根据字体大小调整高度限制
+            base_height = 48 if font_size == "small" else (48 if font_size == "medium" else 56)
+            max_height = 120 if font_size == "small" else (150 if font_size == "medium" else 180)
+            self.input_field.min_height = base_height
+            self.input_field.max_height = max_height
+            self.input_field.setFixedHeight(base_height)
+        
+        # 更新侧边栏样式
+        sidebar = self.findChild(QWidget, "Sidebar")
+        if sidebar:
+            sidebar.setStyleSheet(get_sidebar_style(self.config_manager.get_theme()))
+        
+        # 更新右侧边栏
+        if self.right_sidebar:
+            self.right_sidebar.setStyleSheet(get_right_sidebar_style(self.config_manager.get_theme()))
+        
+        # 更新所有 EmptyStateWidget 的字体
+        for session_id, state in self.sessions.items():
+            if hasattr(state, 'empty_state') and state.empty_state:
+                # 更新标题字体大小
+                for child in state.empty_state.findChildren(QLabel):
+                    if child.text() == "今天想处理什么文件？":
+                        child.setStyleSheet(f"font-size: {font_config['title']}px; font-weight: 600; color: {get_theme_colors()['text_primary']};")
+
+    def nativeEvent(self, eventType, message):
+        """监听Windows系统事件，包括主题变化。"""
+        if platform.system() == "Windows":
+            import ctypes
+            from ctypes import wintypes
+            
+            # WM_SETTINGCHANGE = 0x001A
+            if message and len(message) >= 4:
+                msg_id = int.from_bytes(message[:4], byteorder='little', signed=True)
+                if msg_id == 0x001A:  # WM_SETTINGCHANGE
+                    # 延迟检查主题变化，避免频繁刷新
+                    from PySide6.QtCore import QTimer
+                    QTimer.singleShot(500, self._check_system_theme_change)
+        
+        return super().nativeEvent(eventType, message)
 
     def update_ui_state_for_workspace(self):
         if self.workspace_dir:
@@ -2611,10 +2817,20 @@ class MainWindow(QMainWindow):
         paused = running and state.llm_worker.is_paused
         running_code = state.code_worker and state.code_worker.isRunning()
         
+        c = get_theme_colors()
         if running or running_code:
             self.action_btn.setText("停止")
             self.action_btn.setIcon(qta.icon('fa5s.stop', color='white'))
-            self.action_btn.setStyleSheet("background-color: #ef4444; color: white; border-radius: 18px; font-weight: bold; border: none;")
+            self.action_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {c['error_text']};
+                    color: white;
+                    border-radius: 18px;
+                    font-weight: bold;
+                    border: none;
+                    padding: 0 12px;
+                }}
+            """)
             self.action_btn.setEnabled(True)
             self.input_field.setEnabled(False)
             
@@ -2624,7 +2840,16 @@ class MainWindow(QMainWindow):
         else:
             self.action_btn.setText("发送")
             self.action_btn.setIcon(qta.icon('fa5s.paper-plane', color='white'))
-            self.action_btn.setStyleSheet("background-color: #4d6bfe; color: white; border-radius: 18px; font-weight: bold; border: none;")
+            self.action_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {c['accent']};
+                    color: white;
+                    border-radius: 18px;
+                    font-weight: bold;
+                    border: none;
+                    padding: 0 12px;
+                }}
+            """)
             self.action_btn.setEnabled(True)
             self.input_field.setEnabled(True)
             
@@ -2684,7 +2909,7 @@ class MainWindow(QMainWindow):
         session_layout.setSpacing(12)
 
         active_skills_label = QLabel("本次会话使用的功能: ")
-        active_skills_label.setStyleSheet("color: #9ca3af; font-size: 11px; margin-left: 12px;")
+        active_skills_label.setStyleSheet(get_active_skills_label_style())
         session_layout.addWidget(active_skills_label)
 
         chat_scroll = QScrollArea()
@@ -2726,7 +2951,7 @@ class MainWindow(QMainWindow):
         label = QLabel(message)
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        label.setStyleSheet("font-size: 14px; line-height: 1.4;")
+        label.setStyleSheet(get_confirmation_dialog_style())
         content_layout.addWidget(label)
         content_layout.addStretch()
         scroll_area.setWidget(content_widget)
@@ -2797,16 +3022,51 @@ class MainWindow(QMainWindow):
                     
                     btn = QPushButton(title)
                     btn.setCursor(Qt.PointingHandCursor)
-                    if session_id == self.current_session_id:
-                         btn.setStyleSheet("text-align: left; padding: 10px; border: none; border-radius: 8px; background-color: #eff6ff; color: #1d4ed8; font-weight: 600;")
-                    else:
-                         btn.setStyleSheet("text-align: left; padding: 10px; border: none; border-radius: 8px; background-color: transparent; color: #4b5563;")
-                    
+                    is_selected = session_id == self.current_session_id
+                    btn.setStyleSheet(get_history_button_style(selected=is_selected))
+                    btn.setProperty("session_id", session_id)
+                    btn.setProperty("file_path", file_path)
+                    btn.setContextMenuPolicy(Qt.CustomContextMenu)
+                    btn.customContextMenuRequested.connect(lambda pos, b=btn: self.show_history_context_menu(b, pos))
+
                     btn.clicked.connect(lambda checked=False, sid=session_id: self.load_session(sid))
                     self.history_layout.addWidget(btn)
             except Exception as e:
                 continue
         self.history_layout.addStretch()
+
+    def show_history_context_menu(self, btn, pos):
+        """显示历史会话右键菜单"""
+        menu = QMenu(self)
+        delete_action = menu.addAction("删除会话")
+        delete_action.triggered.connect(lambda: self.delete_history_session(btn))
+        menu.exec_(btn.mapToGlobal(pos))
+
+    def delete_history_session(self, btn):
+        """删除历史会话"""
+        file_path = btn.property("file_path")
+        session_id = btn.property("session_id")
+
+        if not file_path or not os.path.exists(file_path):
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "确认删除",
+            "确定要删除这个会话吗？此操作不可恢复。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            try:
+                os.remove(file_path)
+                # If deleted session is current session, create new session
+                if session_id == self.current_session_id:
+                    self.create_new_session()
+                self.refresh_history_list()
+            except Exception as e:
+                QMessageBox.warning(self, "删除失败", f"无法删除会话: {str(e)}")
 
     def create_load_more_btn(self):
         btn = QPushButton("显示更多历史消息")
@@ -3145,7 +3405,8 @@ class MainWindow(QMainWindow):
                     return
                 pixmap = QPixmap(path)
                 self.preview_pixmap = pixmap
-                scaled = pixmap.scaled(self.preview_stack.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                # Scale pixmap to fit within preview_image while keeping aspect ratio
+                scaled = pixmap.scaled(self.preview_image.maximumSize(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 self.preview_image.setPixmap(scaled)
                 self.preview_stack.setCurrentWidget(self.preview_image)
                 return
@@ -3615,6 +3876,14 @@ if __name__ == "__main__":
     font.setFamily("Segoe UI")
     font.setPointSize(10)
     app.setFont(font)
+    
+    # Load config and apply theme
+    from core.config_manager import ConfigManager
+    temp_config = ConfigManager()
+    theme = temp_config.get_theme()
+    
+    # Apply theme
+    apply_theme(app, theme)
     
     window = MainWindow()
     window.show()
