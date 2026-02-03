@@ -254,7 +254,7 @@ def get_tech_stylesheet(theme="dark"):
         c_border = "#30363d"       # Subtle border
         c_border_active = "#8b949e"
         
-        c_success = "#238636"
+        c_success = "#4d6bfe"
         c_error = "#da3633"
         
         c_selection = "#1f6feb"  # Selection background
@@ -368,7 +368,7 @@ def get_tech_stylesheet(theme="dark"):
         font-size: 15px;
         border: 1px solid {c_accent};
         border-radius: 20px; /* Pill shape */
-        padding: 10px 16px;
+        padding: 12px 16px;
         background-color: {c_bg_card};
     }}
     QTextEdit#MainInput:focus {{
@@ -564,8 +564,8 @@ def get_theme_colors(theme=None):
             "accent_light": "#388bfd",
             
             # 功能色
-            "success": "#238636",
-            "success_bg": "#23863633",
+            "success": "#4d6bfe",
+            "success_bg": "#4d6bfe",
             "success_text": "#3fb950",
             "error": "#da3633",
             "error_bg": "#da363333",
@@ -584,7 +584,7 @@ def get_theme_colors(theme=None):
             "history_hover_bg": "#21262d",
             
             # 按钮
-            "btn_primary_bg": "#238636",
+            "btn_primary_bg": "#4d6bfe",
             "btn_primary_hover": "#2ea043",
             "btn_secondary_bg": "#21262d",
             "btn_secondary_hover": "#30363d",
@@ -838,9 +838,9 @@ def get_tool_details_style(theme=None):
         }}
     """
     return {
-        "header": f"font-size: 14px; font-weight: bold; color: {c['text_primary']};",
-        "info": f"color: {c['text_secondary']}; font-size: 12px;",
-        "label": f"font-size: 12px; font-weight: 600; color: {c['text_primary']}; margin-top: 8px;",
+        "header": f"font-size: 14px; font-weight: bold; color: {c['text_primary']}; background: transparent;",
+        "info": f"color: {c['text_secondary']}; font-size: 12px; background: transparent;",
+        "label": f"font-size: 12px; font-weight: 600; color: {c['text_primary']}; margin-top: 8px; background: transparent;",
         "input": text_edit_style,
         "result": text_edit_style
     }
@@ -904,8 +904,8 @@ def get_empty_state_style(theme=None):
                 background-color: {c['bg_hover']};
             }}
         """,
-        "card_title": f"font-size: 18px; font-weight: 600; color: {c['text_primary']}; background: transparent; border: none;",
-        "card_desc": f"font-size: 14px; color: {c['text_secondary']}; background: transparent; border: none;"
+        "card_title": f"font-size: 18px; font-weight: 600; color: {c['text_primary']}; background: transparent; border: none; padding: 0;",
+        "card_desc": f"font-size: 14px; color: {c['text_secondary']}; background: transparent; border: none; padding: 0;"
     }
 
 

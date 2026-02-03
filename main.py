@@ -777,39 +777,41 @@ class EmptyStateWidget(QWidget):
         self.styles = get_empty_state_style()
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
-        
+        layout.setSpacing(0)
+        layout.setContentsMargins(20, 10, 20, 10)
+
         # Icon
         icon = QLabel()
-        icon.setPixmap(qta.icon('fa5s.robot', color=self.styles['icon_color']).pixmap(64, 64))
+        icon.setPixmap(qta.icon('fa5s.robot', color=self.styles['icon_color']).pixmap(48, 48))
         icon.setAlignment(Qt.AlignCenter)
-        
+
         # Title
         title = QLabel("今天想处理什么文件？")
         title.setStyleSheet(self.styles['title'])
         title.setAlignment(Qt.AlignCenter)
-        
+
         # Grid
         self.grid_widget = QWidget()
         self.grid_layout = QGridLayout(self.grid_widget)
-        self.grid_layout.setSpacing(24) # Increase spacing
-        
+        self.grid_layout.setSpacing(16)
+        self.grid_layout.setContentsMargins(0, 0, 0, 0)
+
         self.actions_data = [
             ("📁 整理文件", "按类型自动分类", "帮我把当前目录下的文件按类型分类整理"),
             ("🖼️ 处理图片", "批量重命名/压缩", "帮我把所有图片重命名为日期格式"),
             ("🔍 代码搜索", "在项目中查找内容", "搜索当前项目中关于 'TODO' 的代码"),
             ("📊 生成报告", "分析目录结构", "分析当前目录结构并生成一份报告")
         ]
-        
+
         self.action_cards = []
         for text, desc, prompt in self.actions_data:
             btn = self.create_action_card(text, desc, prompt)
             self.action_cards.append(btn)
-            
-        layout.addStretch()
+
         layout.addWidget(icon)
-        layout.addSpacing(24)
+        layout.addSpacing(12)
         layout.addWidget(title)
-        layout.addSpacing(40)
+        layout.addSpacing(20)
         layout.addWidget(self.grid_widget)
         layout.addStretch()
         
@@ -822,11 +824,11 @@ class EmptyStateWidget(QWidget):
         
     def reflow_cards(self):
         # Calculate columns based on width
-        # Card min width ~240, max width ~300, spacing 24
+        # Card min width ~200, max width ~280, spacing 16
         w = self.width()
-        if w > 1000:
+        if w > 900:
             cols = 4
-        elif w > 550:
+        elif w > 480:
             cols = 2
         else:
             cols = 1
@@ -851,14 +853,15 @@ class EmptyStateWidget(QWidget):
     def create_action_card(self, title, desc, prompt):
         btn = QPushButton()
         btn.setCursor(Qt.PointingHandCursor)
-        btn.setMinimumHeight(120)
-        btn.setMinimumWidth(240)
-        btn.setMaximumWidth(300)
+        btn.setMinimumHeight(80)
+        btn.setMaximumHeight(100)
+        btn.setMinimumWidth(200)
+        btn.setMaximumWidth(280)
         btn.setStyleSheet(self.styles['card'])
 
         layout = QVBoxLayout(btn)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(8)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(4)
 
         t_label = QLabel(title)
         t_label.setStyleSheet(self.styles['card_title'])
@@ -869,7 +872,6 @@ class EmptyStateWidget(QWidget):
 
         layout.addWidget(t_label)
         layout.addWidget(d_label)
-        layout.addStretch()
 
         btn.clicked.connect(lambda: self.main_window.input_field.setText(prompt))
         return btn
