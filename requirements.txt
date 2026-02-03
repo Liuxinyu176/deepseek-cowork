@@ -1,0 +1,15 @@
+PySide6>=6.0.0
+openai>=1.0.0
+pyinstaller>=6.0.0
+python-docx
+python-pptx
+openpyxl
+pypdf
+pandas
+duckduckgo-search
+trafilatura
+beautifulsoup4
+requests
+markdown
+anthropic>=0.3.0
+qtawesome
